@@ -1,5 +1,5 @@
-import { MnemosClient } from '@mnemos/sdk'
-import type { ListingTerms } from '@mnemos/sdk'
+import { MnemosClient } from '@mnemos-sdk/sdk'
+import type { ListingTerms } from '@mnemos-sdk/sdk'
 import type { CumulativeStats } from './bundle.js'
 
 export interface MnemosEnv {

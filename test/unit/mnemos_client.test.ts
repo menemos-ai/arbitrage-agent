@@ -1,6 +1,16 @@
-import { describe, it, expect } from 'vitest'
-import { MnemosClient } from '@mnemos/sdk'
+import { describe, it, expect, vi } from 'vitest'
 import { createMnemosClient, buildListingTerms, type MnemosEnv } from '../../src/mnemos/client.js'
+
+const MockMnemosClient = vi.hoisted(() =>
+  class {
+    config: unknown
+    constructor(config: unknown) { this.config = config }
+  }
+)
+
+vi.mock('@mnemos-sdk/sdk', () => ({
+  MnemosClient: MockMnemosClient,
+}))
 
 const validEnv: MnemosEnv = {
   privateKey: '0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80',
@@ -18,18 +28,31 @@ const validEnv: MnemosEnv = {
 describe('createMnemosClient', () => {
   it('returns a MnemosClient instance', () => {
     const client = createMnemosClient(validEnv)
-    expect(client).toBeInstanceOf(MnemosClient)
+    expect(client).toBeInstanceOf(MockMnemosClient)
   })
 
   it('defaults storageMock to false when not provided', () => {
     const { storageMock: _, ...envWithoutMock } = validEnv
     const client = createMnemosClient(envWithoutMock as MnemosEnv)
-    expect(client).toBeInstanceOf(MnemosClient)
+    expect(client).toBeInstanceOf(MockMnemosClient)
   })
 
   it('accepts storageMock: true', () => {
     const client = createMnemosClient({ ...validEnv, storageMock: true })
-    expect(client).toBeInstanceOf(MnemosClient)
+    expect(client).toBeInstanceOf(MockMnemosClient)
+  })
+
+  it('passes correct config to MnemosClient', () => {
+    const client = createMnemosClient(validEnv) as unknown as MockMnemosClient
+    expect(client.config).toMatchObject({
+      privateKey: validEnv.privateKey,
+      chainId: 16601,
+      rpcUrl: validEnv.ogRpcUrl,
+      storageNodeUrl: validEnv.ogStorageNode,
+      registryAddress: validEnv.registryAddress,
+      marketplaceAddress: validEnv.marketplaceAddress,
+      storageMock: false,
+    })
   })
 })
 

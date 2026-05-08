@@ -1,4 +1,4 @@
-import type { MemoryBundle } from '@mnemos/sdk'
+import type { MemoryBundle } from '@mnemos-sdk/sdk'
 import type { SwapParams, SwapResult } from '../tools/swap.js'
 import type { PriceResult } from '../tools/prices.js'
 
