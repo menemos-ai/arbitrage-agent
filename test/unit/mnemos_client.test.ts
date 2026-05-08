@@ -43,7 +43,7 @@ describe('createMnemosClient', () => {
   })
 
   it('passes correct config to MnemosClient', () => {
-    const client = createMnemosClient(validEnv) as unknown as MockMnemosClient
+    const client = createMnemosClient(validEnv) as unknown as InstanceType<typeof MockMnemosClient>
     expect(client.config).toMatchObject({
       privateKey: validEnv.privateKey,
       chainId: 16601,

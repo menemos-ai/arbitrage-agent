@@ -1,4 +1,5 @@
-import Anthropic from '@anthropic-ai/sdk'
+import { GoogleGenerativeAI, FinishReason } from '@google/generative-ai'
+import type { FunctionCall, Part } from '@google/generative-ai'
 import { TOOLS } from './definitions.js'
 import { SYSTEM_PROMPT } from './prompt.js'
 import { getPrices } from '../tools/prices.js'
@@ -12,7 +13,9 @@ import type { Network } from '../config/addresses.js'
 import type { MnemosContext } from '../mnemos/client.js'
 import { buildTradeBundle } from '../mnemos/bundle.js'
 
-const client = new Anthropic()
+const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!)
+
+const MAX_TURNS = 20
 
 function wrapResult(toolName: string, data: unknown): string {
   return JSON.stringify({ tool: toolName, data })
@@ -24,13 +27,13 @@ function wrapError(toolName: string, error: unknown): string {
 }
 
 export async function dispatchTool(
-  block: Anthropic.ToolUseBlock,
+  call: FunctionCall,
   clients: Clients,
   walletAddress: `0x${string}`,
   maxTradeUsdc: number,
 ): Promise<string> {
-  const { name, input } = block
-  const args = input as Record<string, string>
+  const { name, args: argsRaw } = call
+  const args = (argsRaw ?? {}) as Record<string, string>
 
   try {
     switch (name) {
@@ -87,7 +90,14 @@ export async function runIteration(
 ): Promise<void> {
   console.log('\n--- Iteration start', new Date().toISOString(), '---')
 
-  const messages: Anthropic.MessageParam[] = []
+  const geminiModel = genAI.getGenerativeModel({
+    model,
+    tools: TOOLS,
+    systemInstruction: SYSTEM_PROMPT,
+    generationConfig: { maxOutputTokens: 4096 },
+  })
+
+  const chat = geminiModel.startChat()
   let swapExecuted = false
 
   // Mnemos collection state
@@ -96,54 +106,52 @@ export async function runIteration(
   let latestGasCostUsd: number | null = null
   let swapContext: { params: SwapParams; result: SwapResult } | null = null
 
-  // Initial Claude invocation
-  let response = await client.messages.create({
-    model,
-    max_tokens: 4096,
-    system: SYSTEM_PROMPT,
-    tools: TOOLS,
-    messages,
-  })
+  // Initial trigger — system instruction sets the context, this starts the turn
+  let result = await chat.sendMessage('Begin arbitrage analysis iteration.')
 
   // Agentic loop
+  let turnCount = 0
   while (true) {
-    // Collect text blocks FIRST — before any stop_reason checks — so reasoning
-    // is captured even from max_tokens responses before the early break.
-    for (const block of response.content) {
-      if (block.type === 'text' && block.text.trim()) {
-        console.log('[Claude]', block.text)
-        reasoningLog.push(block.text)
+    if (++turnCount > MAX_TURNS) {
+      console.warn(`[WARN] Agentic loop exceeded ${MAX_TURNS} turns — aborting iteration`)
+      break
+    }
+
+    const response = result.response
+    const candidate = response.candidates?.[0]
+
+    if (!candidate) break
+
+    // Collect text blocks — capture reasoning before stop-reason checks
+    for (const part of candidate.content?.parts ?? []) {
+      if ('text' in part && part.text?.trim()) {
+        console.log('[Gemini]', part.text)
+        reasoningLog.push(part.text)
       }
     }
 
-    if (response.stop_reason === 'max_tokens') {
-      console.warn('[WARN] Claude hit max_tokens — aborting iteration')
+    // Any finish reason other than STOP (normal) means the model can't continue
+    if (candidate.finishReason && candidate.finishReason !== FinishReason.STOP) {
+      console.warn(`[WARN] Gemini finished with reason: ${candidate.finishReason} — aborting iteration`)
       break
     }
 
-    if (response.stop_reason === 'end_turn') break
+    // Get all function calls from this turn
+    const functionCalls = response.functionCalls() ?? []
 
-    if (response.stop_reason !== 'tool_use') {
-      console.warn('[WARN] Unexpected stop_reason:', response.stop_reason)
-      break
-    }
-
-    // Collect tool use blocks from this turn
-    const toolUseBlocks = response.content.filter(
-      (b): b is Anthropic.ToolUseBlock => b.type === 'tool_use',
-    )
+    if (functionCalls.length === 0) break
 
     // Separate execute_swap from other tools — run non-swap in parallel, swap sequentially
-    const nonSwapBlocks = toolUseBlocks.filter(b => b.name !== 'execute_swap')
-    const swapBlocks = toolUseBlocks.filter(b => b.name === 'execute_swap')
+    const nonSwapCalls = functionCalls.filter(fc => fc.name !== 'execute_swap')
+    const swapCalls = functionCalls.filter(fc => fc.name === 'execute_swap')
 
-    const toolResults: Anthropic.ToolResultBlockParam[] = []
+    const responseParts: Part[] = []
 
     // Run non-swap tools in parallel
     const parallelResults = await Promise.all(
-      nonSwapBlocks.map(async block => {
-        const content = await dispatchTool(block, clients, walletAddress, maxTradeUsdc)
-        console.log(`[tool:${block.name}]`, content)
+      nonSwapCalls.map(async call => {
+        const content = await dispatchTool(call, clients, walletAddress, maxTradeUsdc)
+        console.log(`[tool:${call.name}]`, content)
 
         // Capture prices and gas cost for Mnemos bundle
         const parsed = JSON.parse(content) as { tool: string; data?: unknown; error?: string }
@@ -155,25 +163,27 @@ export async function runIteration(
           }
         }
 
-        return { type: 'tool_result' as const, tool_use_id: block.id, content }
+        return {
+          functionResponse: { name: call.name, response: { result: content } },
+        } as Part
       }),
     )
-    toolResults.push(...parallelResults)
+    responseParts.push(...parallelResults)
 
     // Run execute_swap sequentially (at most once per iteration)
-    for (const block of swapBlocks) {
+    for (const call of swapCalls) {
       if (swapExecuted) {
-        const skipped = wrapError(block.name, 'execute_swap already called this iteration — skipped')
+        const skipped = wrapError(call.name, 'execute_swap already called this iteration — skipped')
         console.warn('[WARN]', skipped)
-        toolResults.push({ type: 'tool_result', tool_use_id: block.id, content: skipped })
+        responseParts.push({ functionResponse: { name: call.name, response: { result: skipped } } } as Part)
         continue
       }
 
-      // Capture Claude's requested swap params before dispatch (intentional — audit trail)
-      const capturedParams = block.input as SwapParams
+      // Capture requested swap params before dispatch (intentional — audit trail)
+      const capturedParams = call.args as unknown as SwapParams
 
-      const content = await dispatchTool(block, clients, walletAddress, maxTradeUsdc)
-      console.log(`[tool:${block.name}]`, content)
+      const content = await dispatchTool(call, clients, walletAddress, maxTradeUsdc)
+      console.log(`[tool:${call.name}]`, content)
 
       // Capture swap result for Mnemos bundle (only on success — guard against wrapError envelopes)
       const parsed = JSON.parse(content) as { tool: string; data?: unknown; error?: string }
@@ -181,22 +191,11 @@ export async function runIteration(
         swapContext = { params: capturedParams, result: parsed.data as SwapResult }
       }
 
-      toolResults.push({ type: 'tool_result', tool_use_id: block.id, content })
+      responseParts.push({ functionResponse: { name: call.name, response: { result: content } } } as Part)
       swapExecuted = true
     }
 
-    // Append assistant turn + tool results to message history
-    messages.push({ role: 'assistant', content: response.content })
-    messages.push({ role: 'user', content: toolResults })
-
-    // Next Claude turn
-    response = await client.messages.create({
-      model,
-      max_tokens: 4096,
-      system: SYSTEM_PROMPT,
-      tools: TOOLS,
-      messages,
-    })
+    result = await chat.sendMessage(responseParts)
   }
 
   console.log('--- Iteration end ---')

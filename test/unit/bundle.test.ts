@@ -81,10 +81,10 @@ describe('buildTradeBundle', () => {
     expect(bundle.metadata.tags).toContain('v3')
   })
 
-  it('sets claudeReasoning from reasoning arg', () => {
+  it('sets agentReasoning from reasoning arg', () => {
     const bundle = buildTradeBundle(params, result, prices, null, 'deep analysis', stats)
     const data = bundle.data as any
-    expect(data.context.claudeReasoning).toBe('deep analysis')
+    expect(data.context.agentReasoning).toBe('deep analysis')
   })
 
   it('sets correct metadata fields', () => {

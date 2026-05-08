@@ -30,7 +30,7 @@ export function buildTradeBundle(
       },
       context: {
         pricesAtTrade: prices,
-        claudeReasoning: reasoning,
+        agentReasoning: reasoning,
       },
       cumulative: {
         totalTrades: stats.totalTrades,

@@ -13,9 +13,10 @@ function requireEnv(name: string): string {
 const ETH_RPC_URL = requireEnv('ETH_RPC_URL')
 const ARB_RPC_URL = requireEnv('ARB_RPC_URL')
 const PRIVATE_KEY = requireEnv('PRIVATE_KEY') as `0x${string}`
+requireEnv('GEMINI_API_KEY')
 const MAX_TRADE_USDC = Number(requireEnv('MAX_TRADE_USDC'))
 const POLL_INTERVAL_SECONDS = Number(process.env.POLL_INTERVAL_SECONDS ?? '30')
-const MODEL = process.env.MODEL ?? 'claude-opus-4-7'
+const MODEL = process.env.MODEL ?? 'gemini-2.0-flash'
 
 if (isNaN(MAX_TRADE_USDC) || MAX_TRADE_USDC <= 0) {
   throw new Error('MAX_TRADE_USDC must be a positive number')
@@ -63,11 +64,20 @@ console.log('  POLL_INTERVAL_SECONDS:', POLL_INTERVAL_SECONDS)
 console.log('  MODEL:', MODEL)
 console.log('  Mnemos:', mnemos ? 'enabled' : 'disabled (env vars missing)')
 
+let isRunning = false
+
 async function tick(): Promise<void> {
+  if (isRunning) {
+    console.warn('[WARN] Previous iteration still in flight — skipping tick')
+    return
+  }
+  isRunning = true
   try {
     await runIteration(clients, walletAddress, MAX_TRADE_USDC, MODEL, mnemos)
   } catch (err) {
     console.error('[ERROR] Iteration failed:', err instanceof Error ? err.message : err)
+  } finally {
+    isRunning = false
   }
 }
 
