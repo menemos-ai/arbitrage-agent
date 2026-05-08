@@ -120,7 +120,7 @@ describe('runIteration', () => {
       stop_sequence: null,
       usage: { input_tokens: 100, output_tokens: 50 },
       content: [{ type: 'text', text: 'No arbitrage opportunity this iteration.' }],
-    })
+    } as any)
 
     const { runIteration } = await import('../../src/agent/loop.js')
     await expect(runIteration({} as never, '0xwallet' as `0x${string}`, 100, 'claude-opus-4-7')).resolves.toBeUndefined()
@@ -141,7 +141,7 @@ describe('runIteration', () => {
       stop_sequence: null,
       usage: { input_tokens: 4096, output_tokens: 4096 },
       content: [],
-    })
+    } as any)
 
     const { runIteration } = await import('../../src/agent/loop.js')
     await runIteration({} as never, '0xwallet' as `0x${string}`, 100, 'claude-opus-4-7')
@@ -179,7 +179,7 @@ describe('runIteration', () => {
             },
           },
         ],
-      })
+      } as any)
       // Second response: end_turn
       .mockResolvedValueOnce({
         id: 'msg_2',
@@ -190,7 +190,7 @@ describe('runIteration', () => {
         stop_sequence: null,
         usage: { input_tokens: 300, output_tokens: 50 },
         content: [{ type: 'text', text: 'Swap executed.' }],
-      })
+      } as any)
 
     const { runIteration } = await import('../../src/agent/loop.js')
     await runIteration({} as never, '0xwallet' as `0x${string}`, 100, 'claude-opus-4-7')
@@ -226,7 +226,7 @@ describe('runIteration', () => {
           { type: 'tool_use', id: 'tu_1', name: 'execute_swap', input: swapInput },
           { type: 'tool_use', id: 'tu_2', name: 'execute_swap', input: swapInput },
         ],
-      })
+      } as any)
       .mockResolvedValueOnce({
         id: 'msg_2',
         type: 'message',
@@ -236,7 +236,7 @@ describe('runIteration', () => {
         stop_sequence: null,
         usage: { input_tokens: 200, output_tokens: 30 },
         content: [],
-      })
+      } as any)
 
     const { runIteration } = await import('../../src/agent/loop.js')
     await runIteration({} as never, '0xwallet' as `0x${string}`, 100, 'claude-opus-4-7')
