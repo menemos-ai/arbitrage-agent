@@ -246,3 +246,156 @@ describe('runIteration', () => {
     warnSpy.mockRestore()
   })
 })
+
+describe('runIteration — mnemos', () => {
+  const SWAP_INPUT = {
+    network: 'ethereum', dex: 'v3',
+    token_in: '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2',
+    token_out: '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48',
+    amount_in: '1000000000000000000', min_amount_out: '2900000000',
+  }
+
+  function endTurn(text = ''): any {
+    return {
+      id: 'msg_end', type: 'message', role: 'assistant', model: 'claude-opus-4-7',
+      stop_reason: 'end_turn', stop_sequence: null,
+      usage: { input_tokens: 100, output_tokens: 10 },
+      content: text ? [{ type: 'text', text }] : [],
+    }
+  }
+
+  function toolUse(tools: unknown[], text = ''): any {
+    return {
+      id: 'msg_tool', type: 'message', role: 'assistant', model: 'claude-opus-4-7',
+      stop_reason: 'tool_use', stop_sequence: null,
+      usage: { input_tokens: 100, output_tokens: 200 },
+      content: [...(text ? [{ type: 'text', text }] : []), ...tools],
+    }
+  }
+
+  let mockCreate: ReturnType<typeof vi.fn>
+  let mockSnapshot: ReturnType<typeof vi.fn>
+  let mockList: ReturnType<typeof vi.fn>
+  let mnemos: { client: { snapshot: ReturnType<typeof vi.fn>; list: ReturnType<typeof vi.fn> }; terms: object; stats: { totalTrades: number; totalGasCostUsd: number } }
+
+  beforeEach(async () => {
+    vi.clearAllMocks()
+    const Anthropic = (await import('@anthropic-ai/sdk')).default
+    mockCreate = vi.mocked(new Anthropic().messages.create)
+    mockSnapshot = vi.fn().mockResolvedValue({ tokenId: '42', txHash: '0xsnaptx', storageUri: 'mock://uri' })
+    mockList = vi.fn().mockResolvedValue('0xlisttx')
+    mnemos = {
+      client: { snapshot: mockSnapshot, list: mockList },
+      terms: { buyPrice: 1000n, rentPricePerDay: 100n, forkPrice: 500n, royaltyBps: 500 },
+      stats: { totalTrades: 0, totalGasCostUsd: 0 },
+    }
+  })
+
+  it('no mnemos provided → snapshot never called', async () => {
+    mockCreate.mockResolvedValue(endTurn('No opportunity'))
+    const { runIteration } = await import('../../src/agent/loop.js')
+    await runIteration({} as never, '0xwallet' as `0x${string}`, 100, 'claude-opus-4-7')
+    expect(mockSnapshot).not.toHaveBeenCalled()
+  })
+
+  it('mnemos provided but no swap → snapshot not called', async () => {
+    mockCreate
+      .mockResolvedValueOnce(toolUse([{ type: 'tool_use', id: 'tu_1', name: 'get_prices', input: {} }]))
+      .mockResolvedValueOnce(endTurn('No opportunity'))
+    const { runIteration } = await import('../../src/agent/loop.js')
+    await runIteration({} as never, '0xwallet' as `0x${string}`, 100, 'claude-opus-4-7', mnemos as any)
+    expect(mockSnapshot).not.toHaveBeenCalled()
+  })
+
+  it('swap succeeds → snapshot called once with correct pricesAtTrade', async () => {
+    mockCreate
+      .mockResolvedValueOnce(toolUse([
+        { type: 'tool_use', id: 'tu_prices', name: 'get_prices', input: {} },
+        { type: 'tool_use', id: 'tu_swap', name: 'execute_swap', input: SWAP_INPUT },
+      ]))
+      .mockResolvedValueOnce(endTurn('Swap done'))
+    const { runIteration } = await import('../../src/agent/loop.js')
+    await runIteration({} as never, '0xwallet' as `0x${string}`, 100, 'claude-opus-4-7', mnemos as any)
+
+    expect(mockSnapshot).toHaveBeenCalledOnce()
+    const bundle = mockSnapshot.mock.calls[0][0] as any
+    expect(bundle.data.context.pricesAtTrade).toEqual({
+      ethereum: { v2: 3000, v3: 3010 },
+      arbitrum: { v2: 2990, v3: 3005 },
+    })
+    expect(bundle.data.trade.txHash).toBe('0xabc123')
+  })
+
+  it('snapshot error → no crash, error logged, stats unchanged', async () => {
+    mockSnapshot.mockRejectedValue(new Error('snapshot failed'))
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+    mockCreate
+      .mockResolvedValueOnce(toolUse([{ type: 'tool_use', id: 'tu_swap', name: 'execute_swap', input: SWAP_INPUT }]))
+      .mockResolvedValueOnce(endTurn())
+
+    const { runIteration } = await import('../../src/agent/loop.js')
+    await expect(runIteration({} as never, '0xwallet' as `0x${string}`, 100, 'claude-opus-4-7', mnemos as any)).resolves.toBeUndefined()
+
+    expect(errorSpy).toHaveBeenCalledWith('[mnemos] Error:', 'snapshot failed')
+    expect(mnemos.stats.totalTrades).toBe(0)
+    expect(mnemos.stats.totalGasCostUsd).toBe(0)
+    errorSpy.mockRestore()
+  })
+
+  it('list error → no crash, stats unchanged', async () => {
+    mockList.mockRejectedValue(new Error('list failed'))
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+    mockCreate
+      .mockResolvedValueOnce(toolUse([{ type: 'tool_use', id: 'tu_swap', name: 'execute_swap', input: SWAP_INPUT }]))
+      .mockResolvedValueOnce(endTurn())
+
+    const { runIteration } = await import('../../src/agent/loop.js')
+    await expect(runIteration({} as never, '0xwallet' as `0x${string}`, 100, 'claude-opus-4-7', mnemos as any)).resolves.toBeUndefined()
+
+    expect(errorSpy).toHaveBeenCalledWith('[mnemos] Error:', 'list failed')
+    expect(mnemos.stats.totalTrades).toBe(0)
+    errorSpy.mockRestore()
+  })
+
+  it('stats incremented after full success', async () => {
+    mockCreate
+      .mockResolvedValueOnce(toolUse([
+        { type: 'tool_use', id: 'tu_gas', name: 'estimate_gas', input: { network: 'ethereum', dex: 'v3' } },
+        { type: 'tool_use', id: 'tu_swap', name: 'execute_swap', input: SWAP_INPUT },
+      ]))
+      .mockResolvedValueOnce(endTurn())
+
+    const { runIteration } = await import('../../src/agent/loop.js')
+    await runIteration({} as never, '0xwallet' as `0x${string}`, 100, 'claude-opus-4-7', mnemos as any)
+
+    expect(mnemos.stats.totalTrades).toBe(1)
+    expect(mnemos.stats.totalGasCostUsd).toBe(5)
+  })
+
+  it('reasoning joined from multiple turns', async () => {
+    mockCreate
+      .mockResolvedValueOnce(toolUse(
+        [{ type: 'tool_use', id: 'tu_swap', name: 'execute_swap', input: SWAP_INPUT }],
+        'Analyzing spread...',
+      ))
+      .mockResolvedValueOnce(endTurn('Swap executed successfully'))
+
+    const { runIteration } = await import('../../src/agent/loop.js')
+    await runIteration({} as never, '0xwallet' as `0x${string}`, 100, 'claude-opus-4-7', mnemos as any)
+
+    const bundle = mockSnapshot.mock.calls[0][0] as any
+    expect(bundle.data.context.claudeReasoning).toBe('Analyzing spread...\n\nSwap executed successfully')
+  })
+
+  it('gasCostUsd is null in bundle when estimate_gas not called', async () => {
+    mockCreate
+      .mockResolvedValueOnce(toolUse([{ type: 'tool_use', id: 'tu_swap', name: 'execute_swap', input: SWAP_INPUT }]))
+      .mockResolvedValueOnce(endTurn())
+
+    const { runIteration } = await import('../../src/agent/loop.js')
+    await runIteration({} as never, '0xwallet' as `0x${string}`, 100, 'claude-opus-4-7', mnemos as any)
+
+    const bundle = mockSnapshot.mock.calls[0][0] as any
+    expect(bundle.data.trade.gasCostUsd).toBeNull()
+  })
+})
