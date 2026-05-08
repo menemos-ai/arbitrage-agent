@@ -13,9 +13,10 @@ function requireEnv(name: string): string {
 const ETH_RPC_URL = requireEnv('ETH_RPC_URL')
 const ARB_RPC_URL = requireEnv('ARB_RPC_URL')
 const PRIVATE_KEY = requireEnv('PRIVATE_KEY') as `0x${string}`
+requireEnv('GEMINI_API_KEY')
 const MAX_TRADE_USDC = Number(requireEnv('MAX_TRADE_USDC'))
 const POLL_INTERVAL_SECONDS = Number(process.env.POLL_INTERVAL_SECONDS ?? '30')
-const MODEL = process.env.MODEL ?? 'claude-opus-4-7'
+const MODEL = process.env.MODEL ?? 'gemini-2.0-flash'
 
 if (isNaN(MAX_TRADE_USDC) || MAX_TRADE_USDC <= 0) {
   throw new Error('MAX_TRADE_USDC must be a positive number')

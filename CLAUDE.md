@@ -40,7 +40,7 @@ test/
 
    ```bash
    cp .env.example .env
-   # Edit .env with your RPC URLs, private key, and Anthropic API key
+   # Edit .env with your RPC URLs, private key, and Gemini API key
    ```
 
    Required env vars:
@@ -49,14 +49,14 @@ test/
    | `ETH_RPC_URL` | Ethereum mainnet RPC endpoint |
    | `ARB_RPC_URL` | Arbitrum One RPC endpoint |
    | `PRIVATE_KEY` | Wallet private key (0x prefixed) |
-   | `ANTHROPIC_API_KEY` | Anthropic API key |
+   | `GEMINI_API_KEY` | Google Gemini API key |
    | `MAX_TRADE_USDC` | Max USD per swap (enforced by runtime) |
 
    Optional:
    | Variable | Default | Description |
    |---|---|---|
    | `POLL_INTERVAL_SECONDS` | `30` | Loop interval in seconds (min 10) |
-   | `MODEL` | `claude-opus-4-7` | Claude model to use |
+   | `MODEL` | `gemini-2.0-flash` | Gemini model to use |
 
    Mnemos (all 10 must be set to enable on-chain trade memory):
    | Variable | Description |
