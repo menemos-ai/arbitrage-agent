@@ -26,3 +26,8 @@ export const ADDRESSES = {
     uniV3Pool: '0xC6962004f452bE9203591991D15f6b388e09E8D0' as Address,
   },
 } as const
+
+export function getV2Router(network: Network): Address {
+  if (network === 'ethereum') return ADDRESSES.ethereum.uniV2Router
+  return ADDRESSES.arbitrum.sushiV2Router
+}
