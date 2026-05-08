@@ -27,29 +27,15 @@ if (isNaN(POLL_INTERVAL_SECONDS) || POLL_INTERVAL_SECONDS < 10) {
 const clients = createClients({ ethRpcUrl: ETH_RPC_URL, arbRpcUrl: ARB_RPC_URL, privateKey: PRIVATE_KEY })
 const walletAddress = clients.ethereum.wallet.account!.address
 
-// Build optional Mnemos context — all 9 vars must be present to enable
-const MNEMOS_ENV_KEYS: (keyof MnemosEnv)[] = [
-  'privateKey', 'ogRpcUrl', 'ogStorageNode', 'ogChainId',
-  'registryAddress', 'marketplaceAddress',
-  'mnemoBuyPrice', 'mnemoRentPricePerDay', 'mnemoForkPrice', 'mnemoRoyaltyBps',
-]
-const ENV_KEY_MAP: Record<keyof MnemosEnv, string> = {
-  privateKey: 'PRIVATE_KEY',
-  ogRpcUrl: 'OG_RPC_URL',
-  ogStorageNode: 'OG_STORAGE_NODE',
-  ogChainId: 'OG_CHAIN_ID',
-  registryAddress: 'MNEMO_REGISTRY_ADDRESS',
-  marketplaceAddress: 'MNEMO_MARKETPLACE_ADDRESS',
-  mnemoBuyPrice: 'MNEMO_BUY_PRICE',
-  mnemoRentPricePerDay: 'MNEMO_RENT_PRICE_PER_DAY',
-  mnemoForkPrice: 'MNEMO_FORK_PRICE',
-  mnemoRoyaltyBps: 'MNEMO_ROYALTY_BPS',
-  storageMock: 'MNEMO_STORAGE_MOCK',
-}
+// Build optional Mnemos context — all 10 vars must be present to enable
+const MNEMOS_REQUIRED = [
+  'OG_RPC_URL', 'OG_STORAGE_NODE', 'OG_CHAIN_ID',
+  'MNEMO_REGISTRY_ADDRESS', 'MNEMO_MARKETPLACE_ADDRESS',
+  'MNEMO_BUY_PRICE', 'MNEMO_RENT_PRICE_PER_DAY', 'MNEMO_FORK_PRICE', 'MNEMO_ROYALTY_BPS',
+] as const
 
 let mnemos: MnemosContext | undefined
-const mnemosValues = MNEMOS_ENV_KEYS.map(k => process.env[ENV_KEY_MAP[k]])
-if (mnemosValues.every(Boolean)) {
+if (MNEMOS_REQUIRED.every(k => process.env[k])) {
   const mnemosEnv: MnemosEnv = {
     privateKey: PRIVATE_KEY,
     ogRpcUrl: process.env.OG_RPC_URL!,
