@@ -15,6 +15,8 @@ import { buildTradeBundle } from '../mnemos/bundle.js'
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!)
 
+const MAX_TURNS = 20
+
 function wrapResult(toolName: string, data: unknown): string {
   return JSON.stringify({ tool: toolName, data })
 }
@@ -92,6 +94,7 @@ export async function runIteration(
     model,
     tools: TOOLS,
     systemInstruction: SYSTEM_PROMPT,
+    generationConfig: { maxOutputTokens: 4096 },
   })
 
   const chat = geminiModel.startChat()
@@ -107,22 +110,29 @@ export async function runIteration(
   let result = await chat.sendMessage('Begin arbitrage analysis iteration.')
 
   // Agentic loop
+  let turnCount = 0
   while (true) {
+    if (++turnCount > MAX_TURNS) {
+      console.warn(`[WARN] Agentic loop exceeded ${MAX_TURNS} turns — aborting iteration`)
+      break
+    }
+
     const response = result.response
     const candidate = response.candidates?.[0]
 
     if (!candidate) break
 
     // Collect text blocks — capture reasoning before stop-reason checks
-    for (const part of candidate.content.parts) {
+    for (const part of candidate.content?.parts ?? []) {
       if ('text' in part && part.text?.trim()) {
         console.log('[Gemini]', part.text)
         reasoningLog.push(part.text)
       }
     }
 
-    if (candidate.finishReason === FinishReason.MAX_TOKENS) {
-      console.warn('[WARN] Gemini hit max_tokens — aborting iteration')
+    // Any finish reason other than STOP (normal) means the model can't continue
+    if (candidate.finishReason && candidate.finishReason !== FinishReason.STOP) {
+      console.warn(`[WARN] Gemini finished with reason: ${candidate.finishReason} — aborting iteration`)
       break
     }
 
@@ -169,7 +179,7 @@ export async function runIteration(
         continue
       }
 
-      // Capture Claude's requested swap params before dispatch (intentional — audit trail)
+      // Capture requested swap params before dispatch (intentional — audit trail)
       const capturedParams = call.args as unknown as SwapParams
 
       const content = await dispatchTool(call, clients, walletAddress, maxTradeUsdc)

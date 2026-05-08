@@ -1,6 +1,6 @@
 # Arbitrage Agent
 
-Autonomous AI agent that monitors WETH/USDC price differences across four DEX pools and executes intra-network arbitrage. All trading decisions are made by Claude — the runtime only enforces safety rails.
+Autonomous AI agent that monitors WETH/USDC price differences across four DEX pools and executes intra-network arbitrage. All trading decisions are made by Gemini — the runtime only enforces safety rails.
 
 ## Architecture
 
@@ -16,7 +16,7 @@ src/
     gas.ts         estimate_gas — gas cost in USD using live gas price + ETH price
     swap.ts        execute_swap — token approval + simulate + write + receipt
   agent/
-    definitions.ts Anthropic Tool definitions (JSON Schema)
+    definitions.ts Gemini Tool definitions (JSON Schema)
     prompt.ts      System prompt
     loop.ts        Agentic loop (multi-turn with tool dispatch)
   mnemos/
@@ -58,7 +58,7 @@ test/
    | `POLL_INTERVAL_SECONDS` | `30` | Loop interval in seconds (min 10) |
    | `MODEL` | `gemini-2.0-flash` | Gemini model to use |
 
-   Mnemos (all 10 must be set to enable on-chain trade memory):
+   Mnemos (all 9 must be set to enable on-chain trade memory):
    | Variable | Description |
    |---|---|
    | `OG_RPC_URL` | 0G Network RPC endpoint |
@@ -70,7 +70,11 @@ test/
    | `MNEMO_RENT_PRICE_PER_DAY` | Rent price per day in wei |
    | `MNEMO_FORK_PRICE` | Fork price in wei |
    | `MNEMO_ROYALTY_BPS` | Royalty in basis points (e.g. 500 = 5%) |
-   | `MNEMO_STORAGE_MOCK` | `true` to use in-memory storage (testing) |
+
+   Optional Mnemos var:
+   | Variable | Default | Description |
+   |---|---|---|
+   | `MNEMO_STORAGE_MOCK` | `false` | `true` to use in-memory storage (testing) |
 
 3. **Fund the wallet**
 
@@ -83,11 +87,11 @@ npm start
 ```
 
 The bot runs an agentic loop every `POLL_INTERVAL_SECONDS`. Each iteration:
-1. Claude fetches prices from all 4 pools
-2. Claude checks wallet balances
-3. If a spread looks profitable, Claude calls estimate_gas
-4. Claude decides to execute or skip — with full reasoning logged
-5. If executing, Claude calls execute_swap (one swap per iteration)
+1. Gemini fetches prices from all 4 pools
+2. Gemini checks wallet balances
+3. If a spread looks profitable, Gemini calls estimate_gas
+4. Gemini decides to execute or skip — with full reasoning logged
+5. If executing, Gemini calls execute_swap (one swap per iteration)
 
 ## Mnemos — On-Chain Trade Memory
 
@@ -95,7 +99,7 @@ When the 10 `MNEMO_*` / `OG_*` env vars are set, the agent mints an on-chain NFT
 
 - Trade details (network, DEX, token pair, amounts, tx hash, gas cost, timestamp)
 - Prices at the time of the trade
-- Claude's full reasoning text
+- The model's full reasoning text
 - Cumulative session stats (total trades, total gas cost USD)
 
 The NFT is listed on the Mnemos marketplace with the configured pricing terms immediately after minting. If either `snapshot` or `list` fails, the error is logged and the agent continues — memory snapshots never block trading.
@@ -114,11 +118,11 @@ ETH_RPC_URL=<url> ARB_RPC_URL=<url> npm run test:integration
 
 ## Safety Rails
 
-All of these are enforced by the runtime — they cannot be overridden by Claude:
+All of these are enforced by the runtime — they cannot be overridden by the model:
 
-- **`MAX_TRADE_USDC`**: Hard cap per swap. Rejected with an error returned to Claude.
+- **`MAX_TRADE_USDC`**: Hard cap per swap. Rejected with an error returned to the model.
 - **Token whitelist**: Only WETH and USDC addresses are permitted for `token_in`/`token_out`.
-- **`min_amount_out` floor**: Raised to 90% of an independently-fetched market quote if Claude's value is lower.
+- **`min_amount_out` floor**: Raised to 90% of an independently-fetched market quote if the model's value is lower.
 - **Exact-amount approval**: Wallet approves exactly `amount_in`, not unlimited.
 - **Sequential swap dispatch**: Only one `execute_swap` call is honored per iteration.
 - **Simulate-before-write**: `simulateContract` catches reverts before spending gas.

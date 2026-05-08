@@ -64,11 +64,20 @@ console.log('  POLL_INTERVAL_SECONDS:', POLL_INTERVAL_SECONDS)
 console.log('  MODEL:', MODEL)
 console.log('  Mnemos:', mnemos ? 'enabled' : 'disabled (env vars missing)')
 
+let isRunning = false
+
 async function tick(): Promise<void> {
+  if (isRunning) {
+    console.warn('[WARN] Previous iteration still in flight — skipping tick')
+    return
+  }
+  isRunning = true
   try {
     await runIteration(clients, walletAddress, MAX_TRADE_USDC, MODEL, mnemos)
   } catch (err) {
     console.error('[ERROR] Iteration failed:', err instanceof Error ? err.message : err)
+  } finally {
+    isRunning = false
   }
 }
 

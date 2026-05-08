@@ -175,7 +175,7 @@ describe('runIteration', () => {
 
     const { runIteration } = await import('../../src/agent/loop.js')
     await runIteration({} as never, '0xwallet' as `0x${string}`, 100, 'gemini-2.0-flash')
-    expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining('max_tokens'))
+    expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining('MAX_TOKENS'))
     consoleSpy.mockRestore()
   })
 
@@ -354,7 +354,7 @@ describe('runIteration — mnemos', () => {
     await runIteration({} as never, '0xwallet' as `0x${string}`, 100, 'gemini-2.0-flash', mnemos as any)
 
     const bundle = mockSnapshot.mock.calls[0][0] as any
-    expect(bundle.data.context.claudeReasoning).toBe('Analyzing spread...\n\nSwap executed successfully')
+    expect(bundle.data.context.agentReasoning).toBe('Analyzing spread...\n\nSwap executed successfully')
   })
 
   it('gasCostUsd is null in bundle when estimate_gas not called', async () => {
