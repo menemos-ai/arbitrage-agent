@@ -5,8 +5,12 @@ import { getPrices } from '../tools/prices.js'
 import { getWalletBalance } from '../tools/balance.js'
 import { estimateGas } from '../tools/gas.js'
 import { executeSwap } from '../tools/swap.js'
+import type { SwapParams, SwapResult } from '../tools/swap.js'
+import type { PriceResult } from '../tools/prices.js'
 import type { Clients } from '../config/chains.js'
 import type { Network } from '../config/addresses.js'
+import type { MnemosContext } from '../mnemos/client.js'
+import { buildTradeBundle } from '../mnemos/bundle.js'
 
 const client = new Anthropic()
 
@@ -79,11 +83,18 @@ export async function runIteration(
   walletAddress: `0x${string}`,
   maxTradeUsdc: number,
   model: string,
+  mnemos?: MnemosContext,
 ): Promise<void> {
   console.log('\n--- Iteration start', new Date().toISOString(), '---')
 
   const messages: Anthropic.MessageParam[] = []
   let swapExecuted = false
+
+  // Mnemos collection state
+  const reasoningLog: string[] = []
+  let latestPrices: PriceResult | null = null
+  let latestGasCostUsd: number | null = null
+  let swapContext: { params: SwapParams; result: SwapResult } | null = null
 
   // Initial Claude invocation
   let response = await client.messages.create({
@@ -96,16 +107,18 @@ export async function runIteration(
 
   // Agentic loop
   while (true) {
-    if (response.stop_reason === 'max_tokens') {
-      console.warn('[WARN] Claude hit max_tokens — aborting iteration')
-      break
-    }
-
-    // Log Claude's reasoning text
+    // Collect text blocks FIRST — before any stop_reason checks — so reasoning
+    // is captured even from max_tokens responses before the early break.
     for (const block of response.content) {
       if (block.type === 'text' && block.text.trim()) {
         console.log('[Claude]', block.text)
+        reasoningLog.push(block.text)
       }
+    }
+
+    if (response.stop_reason === 'max_tokens') {
+      console.warn('[WARN] Claude hit max_tokens — aborting iteration')
+      break
     }
 
     if (response.stop_reason === 'end_turn') break
@@ -131,6 +144,17 @@ export async function runIteration(
       nonSwapBlocks.map(async block => {
         const content = await dispatchTool(block, clients, walletAddress, maxTradeUsdc)
         console.log(`[tool:${block.name}]`, content)
+
+        // Capture prices and gas cost for Mnemos bundle
+        const parsed = JSON.parse(content) as { tool: string; data?: unknown; error?: string }
+        if (!parsed.error && parsed.data != null) {
+          if (parsed.tool === 'get_prices') {
+            latestPrices = parsed.data as PriceResult
+          } else if (parsed.tool === 'estimate_gas') {
+            latestGasCostUsd = (parsed.data as { gasCostUsd: number }).gasCostUsd
+          }
+        }
+
         return { type: 'tool_result' as const, tool_use_id: block.id, content }
       }),
     )
@@ -144,8 +168,19 @@ export async function runIteration(
         toolResults.push({ type: 'tool_result', tool_use_id: block.id, content: skipped })
         continue
       }
+
+      // Capture Claude's requested swap params before dispatch (intentional — audit trail)
+      const capturedParams = block.input as SwapParams
+
       const content = await dispatchTool(block, clients, walletAddress, maxTradeUsdc)
       console.log(`[tool:${block.name}]`, content)
+
+      // Capture swap result for Mnemos bundle (only on success — guard against wrapError envelopes)
+      const parsed = JSON.parse(content) as { tool: string; data?: unknown; error?: string }
+      if (!parsed.error && parsed.data != null) {
+        swapContext = { params: capturedParams, result: parsed.data as SwapResult }
+      }
+
       toolResults.push({ type: 'tool_result', tool_use_id: block.id, content })
       swapExecuted = true
     }
@@ -165,4 +200,26 @@ export async function runIteration(
   }
 
   console.log('--- Iteration end ---')
+
+  // Post-loop Mnemos snapshot — fires after all reasoning is collected
+  if (mnemos && swapContext) {
+    try {
+      const bundle = buildTradeBundle(
+        swapContext.params,
+        swapContext.result,
+        latestPrices,
+        latestGasCostUsd,
+        reasoningLog.join('\n\n'),
+        mnemos.stats,
+      )
+      const snap = await mnemos.client.snapshot(bundle)
+      const listTx = await mnemos.client.list(snap.tokenId, mnemos.terms)
+      console.log(`[mnemos] Snapshot minted — tokenId: ${snap.tokenId}, tx: ${snap.txHash}, storage: ${snap.storageUri}`)
+      console.log(`[mnemos] Listed — tokenId: ${snap.tokenId}, tx: ${listTx}`)
+      mnemos.stats.totalTrades++
+      mnemos.stats.totalGasCostUsd += latestGasCostUsd ?? 0
+    } catch (err) {
+      console.error('[mnemos] Error:', err instanceof Error ? err.message : err)
+    }
+  }
 }

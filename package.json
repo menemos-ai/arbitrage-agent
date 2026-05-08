@@ -14,7 +14,9 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
+    "@0gfoundation/0g-ts-sdk": "1.2.8",
     "@anthropic-ai/sdk": "^0.95.1",
+    "@mnemos/sdk": "file:../backend/packages/sdk",
     "dotenv": "^17.4.2",
     "viem": "^2.28.0"
   },

@@ -19,6 +19,9 @@ src/
     definitions.ts Anthropic Tool definitions (JSON Schema)
     prompt.ts      System prompt
     loop.ts        Agentic loop (multi-turn with tool dispatch)
+  mnemos/
+    bundle.ts      buildTradeBundle — assembles MemoryBundle from swap/price/gas/reasoning
+    client.ts      createMnemosClient, buildListingTerms, MnemosContext
   index.ts         Entry point — env validation, outer polling setInterval
 test/
   unit/            Pure function tests (no RPC required)
@@ -55,6 +58,20 @@ test/
    | `POLL_INTERVAL_SECONDS` | `30` | Loop interval in seconds (min 10) |
    | `MODEL` | `claude-opus-4-7` | Claude model to use |
 
+   Mnemos (all 10 must be set to enable on-chain trade memory):
+   | Variable | Description |
+   |---|---|
+   | `OG_RPC_URL` | 0G Network RPC endpoint |
+   | `OG_STORAGE_NODE` | 0G Storage node URL |
+   | `OG_CHAIN_ID` | 0G chain ID (16601 for testnet) |
+   | `MNEMO_REGISTRY_ADDRESS` | Deployed Mnemos registry contract |
+   | `MNEMO_MARKETPLACE_ADDRESS` | Deployed Mnemos marketplace contract |
+   | `MNEMO_BUY_PRICE` | Buy price in wei |
+   | `MNEMO_RENT_PRICE_PER_DAY` | Rent price per day in wei |
+   | `MNEMO_FORK_PRICE` | Fork price in wei |
+   | `MNEMO_ROYALTY_BPS` | Royalty in basis points (e.g. 500 = 5%) |
+   | `MNEMO_STORAGE_MOCK` | `true` to use in-memory storage (testing) |
+
 3. **Fund the wallet**
 
    Deposit WETH and USDC on both ETH mainnet and Arbitrum before running.
@@ -71,6 +88,19 @@ The bot runs an agentic loop every `POLL_INTERVAL_SECONDS`. Each iteration:
 3. If a spread looks profitable, Claude calls estimate_gas
 4. Claude decides to execute or skip — with full reasoning logged
 5. If executing, Claude calls execute_swap (one swap per iteration)
+
+## Mnemos — On-Chain Trade Memory
+
+When the 10 `MNEMO_*` / `OG_*` env vars are set, the agent mints an on-chain NFT memory snapshot on the 0G network after each successful swap. The snapshot bundles:
+
+- Trade details (network, DEX, token pair, amounts, tx hash, gas cost, timestamp)
+- Prices at the time of the trade
+- Claude's full reasoning text
+- Cumulative session stats (total trades, total gas cost USD)
+
+The NFT is listed on the Mnemos marketplace with the configured pricing terms immediately after minting. If either `snapshot` or `list` fails, the error is logged and the agent continues — memory snapshots never block trading.
+
+If any of the 10 Mnemos env vars are missing, Mnemos is silently disabled (startup log shows `Mnemos: disabled`).
 
 ## Testing
 

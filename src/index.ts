@@ -1,6 +1,8 @@
 import 'dotenv/config'
 import { createClients } from './config/chains.js'
 import { runIteration } from './agent/loop.js'
+import { createMnemosClient, buildListingTerms, type MnemosContext } from './mnemos/client.js'
+import type { MnemosEnv } from './mnemos/client.js'
 
 function requireEnv(name: string): string {
   const value = process.env[name]
@@ -25,15 +27,45 @@ if (isNaN(POLL_INTERVAL_SECONDS) || POLL_INTERVAL_SECONDS < 10) {
 const clients = createClients({ ethRpcUrl: ETH_RPC_URL, arbRpcUrl: ARB_RPC_URL, privateKey: PRIVATE_KEY })
 const walletAddress = clients.ethereum.wallet.account!.address
 
+// Build optional Mnemos context — all 10 vars must be present to enable
+const MNEMOS_REQUIRED = [
+  'OG_RPC_URL', 'OG_STORAGE_NODE', 'OG_CHAIN_ID',
+  'MNEMO_REGISTRY_ADDRESS', 'MNEMO_MARKETPLACE_ADDRESS',
+  'MNEMO_BUY_PRICE', 'MNEMO_RENT_PRICE_PER_DAY', 'MNEMO_FORK_PRICE', 'MNEMO_ROYALTY_BPS',
+] as const
+
+let mnemos: MnemosContext | undefined
+if (MNEMOS_REQUIRED.every(k => process.env[k])) {
+  const mnemosEnv: MnemosEnv = {
+    privateKey: PRIVATE_KEY,
+    ogRpcUrl: process.env.OG_RPC_URL!,
+    ogStorageNode: process.env.OG_STORAGE_NODE!,
+    ogChainId: process.env.OG_CHAIN_ID!,
+    registryAddress: process.env.MNEMO_REGISTRY_ADDRESS!,
+    marketplaceAddress: process.env.MNEMO_MARKETPLACE_ADDRESS!,
+    mnemoBuyPrice: process.env.MNEMO_BUY_PRICE!,
+    mnemoRentPricePerDay: process.env.MNEMO_RENT_PRICE_PER_DAY!,
+    mnemoForkPrice: process.env.MNEMO_FORK_PRICE!,
+    mnemoRoyaltyBps: process.env.MNEMO_ROYALTY_BPS!,
+    storageMock: process.env.MNEMO_STORAGE_MOCK === 'true',
+  }
+  mnemos = {
+    client: createMnemosClient(mnemosEnv),
+    terms: buildListingTerms(mnemosEnv),
+    stats: { totalTrades: 0, totalGasCostUsd: 0 },
+  }
+}
+
 console.log('Arbitrage agent starting')
 console.log('  Wallet:', walletAddress)
 console.log('  MAX_TRADE_USDC:', MAX_TRADE_USDC)
 console.log('  POLL_INTERVAL_SECONDS:', POLL_INTERVAL_SECONDS)
 console.log('  MODEL:', MODEL)
+console.log('  Mnemos:', mnemos ? 'enabled' : 'disabled (env vars missing)')
 
 async function tick(): Promise<void> {
   try {
-    await runIteration(clients, walletAddress, MAX_TRADE_USDC, MODEL)
+    await runIteration(clients, walletAddress, MAX_TRADE_USDC, MODEL, mnemos)
   } catch (err) {
     console.error('[ERROR] Iteration failed:', err instanceof Error ? err.message : err)
   }
