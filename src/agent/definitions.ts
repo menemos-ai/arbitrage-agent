@@ -21,7 +21,7 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
   {
     name: 'estimate_gas',
     description:
-      'Estimates the USD cost of executing one swap on the specified network and DEX. ' +
+      'Estimates the USD cost of executing one operation on the specified network and DEX. ' +
       'Use this before deciding to execute to ensure the opportunity is profitable after fees.',
     parameters: {
       type: 'object',
@@ -33,57 +33,80 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
         },
         dex: {
           type: 'string',
-          enum: ['v2', 'v3'],
-          description: 'v2 = Uniswap V2 (ETH) or SushiSwap (Arbitrum); v3 = Uniswap V3.',
+          enum: ['v2', 'v3', 'flash_loan'],
+          description: 'v2 = Uniswap V2 (ETH) or SushiSwap (Arbitrum); v3 = Uniswap V3; flash_loan = Balancer flash loan arbitrage.',
         },
       },
       required: ['network', 'dex'],
     },
   },
   {
-    name: 'execute_swap',
+    name: 'simulate_flash_loan_arbitrage',
     description:
-      'Executes a token swap on the specified network and DEX. ' +
-      'The runtime enforces MAX_TRADE_USDC regardless of the amount you provide. ' +
-      'Set min_amount_out conservatively — the runtime will raise it to at least ' +
-      '90% of the current market quote if your value is lower. ' +
-      'Only call this after confirming the spread exceeds gas costs. ' +
-      'Call at most once per iteration (buy leg or sell leg, not both simultaneously).',
+      'Quotes the expected profit of a flash loan arbitrage via the on-chain ArbitrageExecutor contract. ' +
+      'Uses a Balancer V2 flash loan to borrow USDC, execute two swaps atomically, and repay. ' +
+      'Returns { expectedProfitRaw, expectedProfitUsd, willSucceed }. ' +
+      'Call this before execute_flash_loan_arbitrage to confirm the opportunity is profitable on-chain.',
     parameters: {
       type: 'object',
       properties: {
         network: {
           type: 'string',
           enum: ['ethereum', 'arbitrum'],
-          description: 'Network where the swap will execute.',
+          description: 'Network where the arbitrage will execute.',
         },
-        dex: {
-          type: 'string',
-          enum: ['v2', 'v3'],
-          description: 'DEX to use: v2 = Uniswap V2 / SushiSwap, v3 = Uniswap V3.',
+        buyOnV2: {
+          type: 'boolean',
+          description:
+            'true = buy WETH on Uniswap V2 / SushiSwap then sell on Uniswap V3; ' +
+            'false = buy WETH on Uniswap V3 then sell on V2 / SushiSwap.',
         },
-        token_in: {
-          type: 'string',
-          description: 'Address of the token to sell (must be WETH or USDC).',
-        },
-        token_out: {
-          type: 'string',
-          description: 'Address of the token to buy (must be WETH or USDC).',
-        },
-        amount_in: {
+        borrowAmount: {
           type: 'string',
           description:
-            "Amount to sell in the token's native units as a decimal string " +
-            '(WETH in wei / 10^18, USDC in 10^6 units).',
-        },
-        min_amount_out: {
-          type: 'string',
-          description:
-            "Minimum acceptable output in the token's native units as a decimal string. " +
-            'The runtime raises this to 90% of market quote if your value is lower.',
+            'Amount of USDC to borrow as a decimal string in 6-decimal units (e.g. "1000000000" = 1000 USDC). ' +
+            'Must not exceed MAX_TRADE_USDC.',
         },
       },
-      required: ['network', 'dex', 'token_in', 'token_out', 'amount_in', 'min_amount_out'],
+      required: ['network', 'buyOnV2', 'borrowAmount'],
+    },
+  },
+  {
+    name: 'execute_flash_loan_arbitrage',
+    description:
+      'Executes the flash loan arbitrage via the on-chain ArbitrageExecutor contract. ' +
+      'The transaction reverts atomically if profit < minProfit — no USDC is lost from the caller wallet. ' +
+      'Only call after simulate_flash_loan_arbitrage confirms willSucceed: true. ' +
+      'Call at most once per iteration.',
+    parameters: {
+      type: 'object',
+      properties: {
+        network: {
+          type: 'string',
+          enum: ['ethereum', 'arbitrum'],
+          description: 'Network where the arbitrage will execute.',
+        },
+        buyOnV2: {
+          type: 'boolean',
+          description:
+            'true = buy WETH on Uniswap V2 / SushiSwap then sell on Uniswap V3; ' +
+            'false = buy WETH on Uniswap V3 then sell on V2 / SushiSwap.',
+        },
+        borrowAmount: {
+          type: 'string',
+          description:
+            'Amount of USDC to borrow as a decimal string in 6-decimal units (e.g. "1000000000" = 1000 USDC). ' +
+            'Must match the value used in simulate_flash_loan_arbitrage.',
+        },
+        minProfit: {
+          type: 'string',
+          description:
+            'Minimum acceptable profit in 6-decimal USDC units as a decimal string. ' +
+            'Recommended: simulate expectedProfitRaw × 0.8 for a 20% slippage buffer. ' +
+            'The runtime raises this to at least 1.5× gas cost regardless of your value.',
+        },
+      },
+      required: ['network', 'buyOnV2', 'borrowAmount', 'minProfit'],
     },
   },
 ]

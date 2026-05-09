@@ -86,6 +86,50 @@ export const quoterV2Abi = [
   },
 ] as const
 
+export const arbitrageExecutorAbi = [
+  {
+    name: 'executeArbitrage',
+    type: 'function',
+    stateMutability: 'nonpayable',
+    inputs: [
+      { name: 'buyOnV2', type: 'bool' },
+      { name: 'borrowAmount', type: 'uint256' },
+      { name: 'minProfit', type: 'uint256' },
+    ],
+    outputs: [],
+  },
+  {
+    name: 'quoteArbitrage',
+    type: 'function',
+    stateMutability: 'nonpayable',
+    inputs: [
+      { name: 'buyOnV2', type: 'bool' },
+      { name: 'borrowAmount', type: 'uint256' },
+    ],
+    outputs: [{ name: 'expectedProfit', type: 'int256' }],
+  },
+  {
+    name: 'ArbitrageExecuted',
+    type: 'event',
+    inputs: [{ name: 'profit', type: 'uint256', indexed: false }],
+  },
+] as const
+
+export const balancerVaultAbi = [
+  {
+    name: 'flashLoan',
+    type: 'function',
+    stateMutability: 'nonpayable',
+    inputs: [
+      { name: 'recipient', type: 'address' },
+      { name: 'tokens', type: 'address[]' },
+      { name: 'amounts', type: 'uint256[]' },
+      { name: 'userData', type: 'bytes' },
+    ],
+    outputs: [],
+  },
+] as const
+
 export const swapRouterV3Abi = [
   {
     name: 'exactInputSingle',

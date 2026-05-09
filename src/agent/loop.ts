@@ -5,15 +5,18 @@ import { SYSTEM_PROMPT } from './prompt.js'
 import { getPrices } from '../tools/prices.js'
 import { getWalletBalance } from '../tools/balance.js'
 import { estimateGas } from '../tools/gas.js'
-import { executeSwap } from '../tools/swap.js'
-import type { SwapParams, SwapResult } from '../tools/swap.js'
+import { quoteFlashLoanArbitrage, executeFlashLoanArbitrage } from '../tools/flash_loan.js'
+import type { FlashLoanParams, FlashLoanResult } from '../tools/flash_loan.js'
 import type { PriceResult } from '../tools/prices.js'
 import type { Clients } from '../config/chains.js'
 import type { Network } from '../config/addresses.js'
+import type { Address } from 'viem'
 import type { MnemosContext } from '../mnemos/client.js'
 import { buildTradeBundle } from '../mnemos/bundle.js'
 
-const MAX_TURNS = 20
+type FlashLoanContext = { params: FlashLoanParams & { minProfit: string }; result: FlashLoanResult } | null
+
+const MAX_TURNS = 8
 
 function wrapResult(toolName: string, data: unknown): string {
   return JSON.stringify({ tool: toolName, data })
@@ -29,9 +32,10 @@ export async function dispatchTool(
   clients: Clients,
   walletAddress: `0x${string}`,
   maxTradeUsdc: number,
+  executorAddresses?: Partial<Record<Network, Address>>,
 ): Promise<string> {
   const { name, args: argsRaw } = call
-  const args = (argsRaw ?? {}) as Record<string, string>
+  const args = (argsRaw ?? {}) as Record<string, unknown>
 
   try {
     switch (name) {
@@ -46,7 +50,7 @@ export async function dispatchTool(
       case 'estimate_gas': {
         const result = await estimateGas(
           args.network as Network,
-          args.dex as 'v2' | 'v3',
+          args.dex as 'v2' | 'v3' | 'flash_loan',
           clients,
         )
         return wrapResult(name, {
@@ -55,22 +59,28 @@ export async function dispatchTool(
           gasPriceWei: result.gasPriceWei.toString(),
         })
       }
-      case 'execute_swap': {
-        const result = await executeSwap(
+      case 'simulate_flash_loan_arbitrage': {
+        const network = args.network as Network
+        const executorAddress = executorAddresses?.[network]
+        if (!executorAddress) return wrapError(name, `No executor address configured for network: ${network}`)
+        const result = await quoteFlashLoanArbitrage(
           {
-            network: args.network as Network,
-            dex: args.dex as 'v2' | 'v3',
-            token_in: args.token_in,
-            token_out: args.token_out,
-            amount_in: args.amount_in,
-            min_amount_out: args.min_amount_out,
+            network,
+            buyOnV2: Boolean(args.buyOnV2),
+            borrowAmount: String(args.borrowAmount),
           },
           maxTradeUsdc,
           clients,
-          walletAddress,
+          executorAddress,
         )
-        return wrapResult(name, result)
+        return wrapResult(name, {
+          expectedProfitRaw: result.expectedProfitRaw.toString(),
+          expectedProfitUsd: result.expectedProfitUsd,
+          willSucceed: result.willSucceed,
+          revertReason: result.revertReason,
+        })
       }
+      // execute_flash_loan_arbitrage is handled serially in runIteration (needs latestGasCostUsd)
       default:
         return wrapError(name, `Unknown tool: ${name}`)
     }
@@ -85,16 +95,17 @@ export async function runIteration(
   maxTradeUsdc: number,
   model: string,
   mnemos?: MnemosContext,
+  executorAddresses?: Partial<Record<Network, Address>>,
 ): Promise<void> {
   console.log('\n--- Iteration start', new Date().toISOString(), '---')
 
   const provider = createProvider(model, SYSTEM_PROMPT, TOOL_DEFINITIONS)
 
-  let swapExecuted = false
+  let flashLoanExecuted = false
   const reasoningLog: string[] = []
   let latestPrices: PriceResult | null = null
   let latestGasCostUsd: number | null = null
-  let swapContext: { params: SwapParams; result: SwapResult } | null = null
+  let flashLoanContext: FlashLoanContext = null
 
   let turnResult = await provider.sendMessage('Begin arbitrage analysis iteration.')
 
@@ -119,14 +130,14 @@ export async function runIteration(
 
     if (turnResult.toolCalls.length === 0) break
 
-    const nonSwapCalls = turnResult.toolCalls.filter(c => c.name !== 'execute_swap')
-    const swapCalls = turnResult.toolCalls.filter(c => c.name === 'execute_swap')
+    const nonExecCalls = turnResult.toolCalls.filter(c => c.name !== 'execute_flash_loan_arbitrage')
+    const execCalls = turnResult.toolCalls.filter(c => c.name === 'execute_flash_loan_arbitrage')
 
     const toolResults: ToolResult[] = []
 
     const parallelResults = await Promise.all(
-      nonSwapCalls.map(async call => {
-        const content = await dispatchTool(call, clients, walletAddress, maxTradeUsdc)
+      nonExecCalls.map(async call => {
+        const content = await dispatchTool(call, clients, walletAddress, maxTradeUsdc, executorAddresses)
         console.log(`[tool:${call.name}]`, content)
 
         const parsed = JSON.parse(content) as { tool: string; data?: unknown; error?: string }
@@ -141,25 +152,46 @@ export async function runIteration(
     )
     toolResults.push(...parallelResults)
 
-    for (const call of swapCalls) {
-      if (swapExecuted) {
-        const skipped = wrapError(call.name, 'execute_swap already called this iteration — skipped')
+    for (const call of execCalls) {
+      if (flashLoanExecuted) {
+        const skipped = wrapError(call.name, 'execute_flash_loan_arbitrage already called this iteration — skipped')
         console.warn('[WARN]', skipped)
         toolResults.push({ id: call.id, name: call.name, content: skipped })
         continue
       }
 
-      const capturedParams = call.args as unknown as SwapParams
-      const content = await dispatchTool(call, clients, walletAddress, maxTradeUsdc)
-      console.log(`[tool:${call.name}]`, content)
-
-      const parsed = JSON.parse(content) as { tool: string; data?: unknown; error?: string }
-      if (!parsed.error && parsed.data != null) {
-        swapContext = { params: capturedParams, result: parsed.data as SwapResult }
+      const callArgs = (call.args ?? {}) as Record<string, unknown>
+      const execParams: FlashLoanParams & { minProfit: string } = {
+        network: callArgs.network as Network,
+        buyOnV2: Boolean(callArgs.buyOnV2),
+        borrowAmount: String(callArgs.borrowAmount),
+        minProfit: String(callArgs.minProfit),
       }
 
+      const executorAddress = executorAddresses?.[execParams.network]
+      let content: string
+      if (!executorAddress) {
+        content = wrapError(call.name, `No executor address configured for network: ${execParams.network}`)
+      } else {
+        try {
+          const result = await executeFlashLoanArbitrage(
+            execParams,
+            maxTradeUsdc,
+            latestGasCostUsd ?? 5.0,
+            clients,
+            walletAddress,
+            executorAddress,
+          )
+          content = wrapResult(call.name, result)
+          flashLoanContext = { params: execParams, result }
+        } catch (err) {
+          content = wrapError(call.name, err)
+        }
+      }
+
+      console.log(`[tool:${call.name}]`, content)
       toolResults.push({ id: call.id, name: call.name, content })
-      swapExecuted = true
+      flashLoanExecuted = true
     }
 
     turnResult = await provider.sendToolResults(toolResults)
@@ -167,11 +199,11 @@ export async function runIteration(
 
   console.log('--- Iteration end ---')
 
-  if (mnemos && swapContext) {
+  if (mnemos && flashLoanContext) {
     try {
       const bundle = buildTradeBundle(
-        swapContext.params,
-        swapContext.result,
+        flashLoanContext.params,
+        flashLoanContext.result,
         latestPrices,
         latestGasCostUsd,
         reasoningLog.join('\n\n'),

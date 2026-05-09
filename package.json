@@ -6,6 +6,11 @@
   "scripts": {
     "start": "tsx src/index.ts",
     "build": "tsc",
+    "build:contracts": "cd contracts && forge build",
+    "deploy:dry-run:eth": "set -a && . ./.env && set +a && cd contracts && forge script script/Deploy.s.sol --rpc-url $ETH_RPC_URL",
+    "deploy:dry-run:arb": "set -a && . ./.env && set +a && cd contracts && forge script script/Deploy.s.sol --rpc-url $ARB_RPC_URL",
+    "deploy:eth": "set -a && . ./.env && set +a && cd contracts && forge script script/Deploy.s.sol --rpc-url $ETH_RPC_URL --private-key $PRIVATE_KEY --broadcast",
+    "deploy:arb": "set -a && . ./.env && set +a && cd contracts && forge script script/Deploy.s.sol --rpc-url $ARB_RPC_URL --private-key $PRIVATE_KEY --broadcast",
     "test:unit": "vitest run --project unit",
     "test:integration": "vitest run --project integration",
     "test": "vitest run"

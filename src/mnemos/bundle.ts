@@ -1,5 +1,4 @@
 import type { MemoryBundle } from '@mnemos-sdk/sdk'
-import type { SwapParams, SwapResult } from '../tools/swap.js'
 import type { PriceResult } from '../tools/prices.js'
 
 export interface CumulativeStats {
@@ -7,9 +6,16 @@ export interface CumulativeStats {
   totalGasCostUsd: number
 }
 
+// Minimal shim — accepts any trade params/result shape.
+// Full FlashLoanParams/FlashLoanResult schema migration is deferred.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type TradeParams = any
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type TradeResult = any
+
 export function buildTradeBundle(
-  params: SwapParams,
-  result: SwapResult,
+  params: TradeParams,
+  result: TradeResult,
   prices: PriceResult | null,
   gasCostUsd: number | null,
   reasoning: string,
@@ -18,12 +24,12 @@ export function buildTradeBundle(
   return {
     data: {
       trade: {
-        network: params.network,
-        dex: params.dex,
-        tokenIn: params.token_in,
-        tokenOut: params.token_out,
-        amountIn: params.amount_in,
-        amountOut: result.amountOut,
+        network: params.network ?? 'unknown',
+        dex: params.dex ?? (params.buyOnV2 !== undefined ? (params.buyOnV2 ? 'v2_buy' : 'v3_buy') : 'unknown'),
+        tokenIn: params.token_in ?? params.borrowToken ?? 'usdc',
+        tokenOut: params.token_out ?? 'weth',
+        amountIn: params.amount_in ?? params.borrowAmount ?? '0',
+        amountOut: result.amountOut ?? result.profitRaw ?? '0',
         txHash: result.txHash,
         gasCostUsd,
         timestamp: Date.now(),
@@ -42,7 +48,7 @@ export function buildTradeBundle(
       agentId: 'arbitrage-agent-v1',
       version: '1.0.0',
       createdAt: Date.now(),
-      tags: ['arbitrage', 'weth-usdc', params.network, params.dex],
+      tags: ['arbitrage', 'weth-usdc', params.network ?? 'unknown', params.dex ?? 'flash_loan'],
     },
   }
 }

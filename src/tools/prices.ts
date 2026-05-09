@@ -3,7 +3,7 @@ import { ADDRESSES } from '../config/addresses.js'
 import type { Clients } from '../config/chains.js'
 
 export interface PriceResult {
-  ethereum: { v2: number; v3: number }
+  ethereum: { v2: number; v3: number } | null
   arbitrum: { v2: number; v3: number }
 }
 
@@ -69,7 +69,7 @@ async function fetchV3Price(
 }
 
 export async function getPrices(clients: Clients): Promise<PriceResult> {
-  const [ethV2, ethV3, arbV2, arbV3] = await Promise.all([
+  const [ethV2, ethV3, arbV2, arbV3] = await Promise.allSettled([
     fetchV2Price(ADDRESSES.ethereum.uniV2Pair, false, clients.ethereum.public),
     fetchV3Price(
       ADDRESSES.ethereum.uniV3QuoterV2,
@@ -86,8 +86,17 @@ export async function getPrices(clients: Clients): Promise<PriceResult> {
     ),
   ])
 
+  const ethOk = ethV2.status === 'fulfilled' && ethV3.status === 'fulfilled'
+  if (!ethOk) {
+    const reason = ethV2.status === 'rejected' ? ethV2.reason : (ethV3 as PromiseRejectedResult).reason
+    console.warn('[prices] ETH mainnet unavailable:', (reason as Error)?.message ?? reason)
+  }
+
   return {
-    ethereum: { v2: ethV2, v3: ethV3 },
-    arbitrum: { v2: arbV2, v3: arbV3 },
+    ethereum: ethOk ? { v2: ethV2.value, v3: ethV3.value } : null,
+    arbitrum: {
+      v2: (arbV2 as PromiseFulfilledResult<number>).value,
+      v3: (arbV3 as PromiseFulfilledResult<number>).value,
+    },
   }
 }

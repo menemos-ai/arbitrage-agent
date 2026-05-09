@@ -33,9 +33,11 @@ describe('getPrices integration', () => {
     }
 
     // V2 and V3 on the same network should be within 5% of each other
-    const ethSpread = Math.abs(prices.ethereum.v2 - prices.ethereum.v3) / prices.ethereum.v2
+    if (prices.ethereum) {
+      const ethSpread = Math.abs(prices.ethereum.v2 - prices.ethereum.v3) / prices.ethereum.v2
+      expect(ethSpread, 'ETH V2/V3 spread').toBeLessThan(0.05)
+    }
     const arbSpread = Math.abs(prices.arbitrum.v2 - prices.arbitrum.v3) / prices.arbitrum.v2
-    expect(ethSpread, 'ETH V2/V3 spread').toBeLessThan(0.05)
     expect(arbSpread, 'ARB V2/V3 spread').toBeLessThan(0.05)
   })
 })

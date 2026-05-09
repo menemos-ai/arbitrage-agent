@@ -1,14 +1,16 @@
 import { quoterV2Abi } from '../config/abis.js'
 import { ADDRESSES } from '../config/addresses.js'
+import { FLASH_LOAN_GAS_LIMIT } from './flash_loan.js'
 import type { Clients } from '../config/chains.js'
 import type { Network } from '../config/addresses.js'
 
-type Dex = 'v2' | 'v3'
+export type Dex = 'v2' | 'v3' | 'flash_loan'
 
 // Conservative gas limits per swap type
 const GAS_LIMIT: Record<Dex, bigint> = {
   v2: 150_000n,
   v3: 180_000n,
+  flash_loan: FLASH_LOAN_GAS_LIMIT,
 }
 
 const ONE_WETH = 10n ** 18n
@@ -56,11 +58,7 @@ async function fetchEthPrice(
   return Number(result[0]) / 1e6
 }
 
-export async function estimateGas(
-  network: Network,
-  dex: Dex,
-  clients: Clients,
-): Promise<GasEstimateResult> {
+export async function estimateGas(network: Network, dex: Dex, clients: Clients): Promise<GasEstimateResult> {
   const networkClients = clients[network]
   const addrs = ADDRESSES[network]
 

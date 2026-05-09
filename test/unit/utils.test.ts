@@ -1,10 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import {
-  validateTokenWhitelist,
-  validateAmount,
-  buildDeadline,
-  clampMinAmountOut,
-} from '../../src/tools/swap.js'
+import { validateTokenWhitelist, validateAmount } from '../../src/tools/utils.js'
 import { ADDRESSES } from '../../src/config/addresses.js'
 
 const ETH_WETH = ADDRESSES.ethereum.weth
@@ -55,56 +50,5 @@ describe('validateAmount', () => {
 
   it('includes amounts in error message', () => {
     expect(() => validateAmount(150.5, 100)).toThrow(/\$150\.50/)
-  })
-})
-
-describe('buildDeadline', () => {
-  it('returns a bigint deadline in the future', () => {
-    const now = BigInt(Math.floor(Date.now() / 1000))
-    const deadline = buildDeadline()
-    expect(typeof deadline).toBe('bigint')
-    expect(deadline).toBeGreaterThan(now)
-  })
-
-  it('defaults to 5-minute offset', () => {
-    const before = BigInt(Math.floor(Date.now() / 1000))
-    const deadline = buildDeadline()
-    expect(deadline - before).toBeGreaterThanOrEqual(299n)
-    expect(deadline - before).toBeLessThanOrEqual(301n)
-  })
-
-  it('respects custom offset', () => {
-    const before = BigInt(Math.floor(Date.now() / 1000))
-    const deadline = buildDeadline(60)
-    expect(deadline - before).toBeGreaterThanOrEqual(59n)
-    expect(deadline - before).toBeLessThanOrEqual(61n)
-  })
-})
-
-describe('clampMinAmountOut', () => {
-  it('keeps Claude value when above 90% floor', () => {
-    const claudeMin = 950n
-    const quote = 1000n
-    expect(clampMinAmountOut(claudeMin, quote)).toBe(950n)
-  })
-
-  it('raises to 90% floor when Claude value is too low', () => {
-    const claudeMin = 800n
-    const quote = 1000n
-    // floor = 1000 * 9000 / 10000 = 900
-    expect(clampMinAmountOut(claudeMin, quote)).toBe(900n)
-  })
-
-  it('keeps Claude value exactly at the floor', () => {
-    const claudeMin = 900n
-    const quote = 1000n
-    expect(clampMinAmountOut(claudeMin, quote)).toBe(900n)
-  })
-
-  it('raises when Claude passes 0', () => {
-    const claudeMin = 0n
-    const quote = 3000_000000n  // 3000 USDC
-    const result = clampMinAmountOut(claudeMin, quote)
-    expect(result).toBe(2700_000000n)  // 90%
   })
 })
