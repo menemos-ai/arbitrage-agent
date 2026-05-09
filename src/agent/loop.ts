@@ -16,7 +16,7 @@ import { buildTradeBundle } from '../mnemos/bundle.js'
 
 type FlashLoanContext = { params: FlashLoanParams & { minProfit: string }; result: FlashLoanResult } | null
 
-const MAX_TURNS = 20
+const MAX_TURNS = 8
 
 function wrapResult(toolName: string, data: unknown): string {
   return JSON.stringify({ tool: toolName, data })
