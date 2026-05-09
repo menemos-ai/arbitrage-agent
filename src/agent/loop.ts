@@ -5,13 +5,15 @@ import { SYSTEM_PROMPT } from './prompt.js'
 import { getPrices } from '../tools/prices.js'
 import { getWalletBalance } from '../tools/balance.js'
 import { estimateGas } from '../tools/gas.js'
-import { executeSwap } from '../tools/swap.js'
-import type { SwapParams, SwapResult } from '../tools/swap.js'
 import type { PriceResult } from '../tools/prices.js'
 import type { Clients } from '../config/chains.js'
 import type { Network } from '../config/addresses.js'
 import type { MnemosContext } from '../mnemos/client.js'
 import { buildTradeBundle } from '../mnemos/bundle.js'
+
+// Flash loan context — types will be replaced with FlashLoanParams/FlashLoanResult in U6
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type FlashLoanContextPlaceholder = { params: any; result: any } | null
 
 const MAX_TURNS = 20
 
@@ -55,22 +57,7 @@ export async function dispatchTool(
           gasPriceWei: result.gasPriceWei.toString(),
         })
       }
-      case 'execute_swap': {
-        const result = await executeSwap(
-          {
-            network: args.network as Network,
-            dex: args.dex as 'v2' | 'v3',
-            token_in: args.token_in,
-            token_out: args.token_out,
-            amount_in: args.amount_in,
-            min_amount_out: args.min_amount_out,
-          },
-          maxTradeUsdc,
-          clients,
-          walletAddress,
-        )
-        return wrapResult(name, result)
-      }
+      // execute_swap removed — replaced by simulate_flash_loan_arbitrage / execute_flash_loan_arbitrage in U6
       default:
         return wrapError(name, `Unknown tool: ${name}`)
     }
@@ -94,7 +81,7 @@ export async function runIteration(
   const reasoningLog: string[] = []
   let latestPrices: PriceResult | null = null
   let latestGasCostUsd: number | null = null
-  let swapContext: { params: SwapParams; result: SwapResult } | null = null
+  let swapContext: FlashLoanContextPlaceholder = null
 
   let turnResult = await provider.sendMessage('Begin arbitrage analysis iteration.')
 
@@ -119,6 +106,7 @@ export async function runIteration(
 
     if (turnResult.toolCalls.length === 0) break
 
+    // execute_swap removed — guard will be updated to execute_flash_loan_arbitrage in U6
     const nonSwapCalls = turnResult.toolCalls.filter(c => c.name !== 'execute_swap')
     const swapCalls = turnResult.toolCalls.filter(c => c.name === 'execute_swap')
 
@@ -149,13 +137,13 @@ export async function runIteration(
         continue
       }
 
-      const capturedParams = call.args as unknown as SwapParams
+      const capturedParams = call.args
       const content = await dispatchTool(call, clients, walletAddress, maxTradeUsdc)
       console.log(`[tool:${call.name}]`, content)
 
       const parsed = JSON.parse(content) as { tool: string; data?: unknown; error?: string }
       if (!parsed.error && parsed.data != null) {
-        swapContext = { params: capturedParams, result: parsed.data as SwapResult }
+        swapContext = { params: capturedParams, result: parsed.data }
       }
 
       toolResults.push({ id: call.id, name: call.name, content })

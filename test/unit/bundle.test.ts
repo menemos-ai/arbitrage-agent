@@ -1,10 +1,9 @@
 import { describe, it, expect } from 'vitest'
 import { buildTradeBundle, type CumulativeStats } from '../../src/mnemos/bundle.js'
-import type { SwapParams, SwapResult } from '../../src/tools/swap.js'
 import type { PriceResult } from '../../src/tools/prices.js'
 
-const params: SwapParams = {
-  network: 'ethereum',
+const params = {
+  network: 'ethereum' as const,
   dex: 'v2',
   token_in: '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2',
   token_out: '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48',
@@ -12,7 +11,7 @@ const params: SwapParams = {
   min_amount_out: '2950000000',
 }
 
-const result: SwapResult = {
+const result = {
   txHash: '0xdeadbeef',
   amountOut: '2995000000',
 }
