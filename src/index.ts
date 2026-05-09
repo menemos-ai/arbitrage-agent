@@ -43,6 +43,8 @@ function resolveModel(): string {
 const ETH_RPC_URL = requireEnv('ETH_RPC_URL')
 const ARB_RPC_URL = requireEnv('ARB_RPC_URL')
 const PRIVATE_KEY = requireEnv('PRIVATE_KEY') as `0x${string}`
+const EXECUTOR_ETH = requireEnv('EXECUTOR_ETH') as `0x${string}`
+const EXECUTOR_ARB = requireEnv('EXECUTOR_ARB') as `0x${string}`
 const MAX_TRADE_USDC = Number(requireEnv('MAX_TRADE_USDC'))
 const POLL_INTERVAL_SECONDS = Number(process.env.POLL_INTERVAL_SECONDS ?? '30')
 const MODEL = resolveModel()
@@ -56,6 +58,7 @@ if (isNaN(POLL_INTERVAL_SECONDS) || POLL_INTERVAL_SECONDS < 10) {
 
 const clients = createClients({ ethRpcUrl: ETH_RPC_URL, arbRpcUrl: ARB_RPC_URL, privateKey: PRIVATE_KEY })
 const walletAddress = clients.ethereum.wallet.account!.address
+const executorAddresses = { ethereum: EXECUTOR_ETH, arbitrum: EXECUTOR_ARB }
 
 // Build optional Mnemos context — all 9 vars must be present to enable
 const MNEMOS_REQUIRED = [
@@ -92,6 +95,8 @@ console.log('  Wallet:', walletAddress)
 console.log('  MAX_TRADE_USDC:', MAX_TRADE_USDC)
 console.log('  POLL_INTERVAL_SECONDS:', POLL_INTERVAL_SECONDS)
 console.log('  MODEL:', MODEL)
+console.log('  EXECUTOR_ETH:', EXECUTOR_ETH)
+console.log('  EXECUTOR_ARB:', EXECUTOR_ARB)
 console.log('  Mnemos:', mnemos ? 'enabled' : 'disabled (env vars missing)')
 
 let isRunning = false

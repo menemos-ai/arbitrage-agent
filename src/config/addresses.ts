@@ -12,6 +12,7 @@ export const ADDRESSES = {
     uniV3QuoterV2: '0x61fFE014bA17989E743c5F6cB21bF9697530B21e' as Address,
     // WETH/USDC 0.05% pool
     uniV3Pool: '0x88e6A0c2dDD26FEEb64F039a2c41296FcB3f5640' as Address,
+    balancerVault: '0xBA12222222228d8Ba445958a75a0704d566BF2C8' as Address,
   },
   arbitrum: {
     weth: '0x82aF49447D8a07e3bd95BD0d56f35241523fBab1' as Address,
@@ -24,6 +25,7 @@ export const ADDRESSES = {
     uniV3QuoterV2: '0x61fFE014bA17989E743c5F6cB21bF9697530B21e' as Address,
     // WETH/USDC 0.05% pool — verified on-chain: token0=WETH, token1=USDC, fee=500
     uniV3Pool: '0xC6962004f452bE9203591991D15f6b388e09E8D0' as Address,
+    balancerVault: '0xBA12222222228d8Ba445958a75a0704d566BF2C8' as Address,
   },
 } as const
 
