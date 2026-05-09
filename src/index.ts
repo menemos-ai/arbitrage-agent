@@ -40,7 +40,9 @@ function resolveModel(): string {
   )
 }
 
-const ETH_RPC_URL = requireEnv('ETH_RPC_URL')
+// ETH_RPC_URL is optional — falls back to a public endpoint for price monitoring only.
+// Without EXECUTOR_ETH the agent will never execute on mainnet.
+const ETH_RPC_URL = process.env.ETH_RPC_URL ?? 'https://eth.llamarpc.com'
 const ARB_RPC_URL = requireEnv('ARB_RPC_URL')
 const PRIVATE_KEY = requireEnv('PRIVATE_KEY') as `0x${string}`
 const EXECUTOR_ETH = process.env.EXECUTOR_ETH as `0x${string}` | undefined
@@ -97,8 +99,9 @@ console.log('  Wallet:', walletAddress)
 console.log('  MAX_TRADE_USDC:', MAX_TRADE_USDC)
 console.log('  POLL_INTERVAL_SECONDS:', POLL_INTERVAL_SECONDS)
 console.log('  MODEL:', MODEL)
-console.log('  EXECUTOR_ETH:', EXECUTOR_ETH ?? 'not set (flash loan disabled)')
-console.log('  EXECUTOR_ARB:', EXECUTOR_ARB ?? 'not set (flash loan disabled)')
+console.log('  ETH_RPC_URL:', process.env.ETH_RPC_URL ? 'set' : 'not set (using public fallback, monitor-only)')
+console.log('  EXECUTOR_ETH:', EXECUTOR_ETH ?? 'not set (ETH mainnet disabled)')
+console.log('  EXECUTOR_ARB:', EXECUTOR_ARB ?? 'not set (Arbitrum flash loan disabled)')
 console.log('  Mnemos:', mnemos ? 'enabled' : 'disabled (env vars missing)')
 
 let isRunning = false
