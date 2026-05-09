@@ -108,7 +108,7 @@ async function tick(): Promise<void> {
   }
   isRunning = true
   try {
-    await runIteration(clients, walletAddress, MAX_TRADE_USDC, MODEL, mnemos)
+    await runIteration(clients, walletAddress, MAX_TRADE_USDC, MODEL, mnemos, executorAddresses)
   } catch (err) {
     console.error('[ERROR] Iteration failed:', err instanceof Error ? err.message : err)
   } finally {
