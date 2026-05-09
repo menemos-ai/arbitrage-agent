@@ -16,15 +16,17 @@ export const ADDRESSES = {
   },
   arbitrum: {
     weth: '0x82aF49447D8a07e3bd95BD0d56f35241523fBab1' as Address,
-    usdc: '0xaf88d065e77c8cC2239327C5EDb3A432268e5831' as Address,
-    // SushiSwap V2 — pair verified on-chain via factory.getPair(WETH, USDC)
+    // USDC.e (bridged) — SushiSwap V2 and UniV3 liquidity on Arbitrum is concentrated in USDC.e.
+    // The native USDC pool on SushiSwap has only ~$23K TVL (unusable), while USDC.e has ~$174K.
+    usdc: '0xFF970A61A04b1cA14834A43f5dE4533eBDDB5CC8' as Address,
+    // SushiSwap V2 — WETH/USDC.e pair (verified: token0=WETH, token1=USDC.e, TVL ~$174K)
     sushiV2Router: '0x1b02dA8Cb0d097eB8D57A175b88c7D8b47997506' as Address,
-    sushiV2Pair: '0x57b85FEf094e10b5eeCDF350Af688299E9553378' as Address,
+    sushiV2Pair: '0x905dfCD5649217c42684f23958568e533C711Aa3' as Address,
     // Uniswap V3 — same deterministic addresses as mainnet
     uniV3Router: '0xE592427A0AEce92De3Edee1F18E0157C05861564' as Address,
     uniV3QuoterV2: '0x61fFE014bA17989E743c5F6cB21bF9697530B21e' as Address,
-    // WETH/USDC 0.05% pool — verified on-chain: token0=WETH, token1=USDC, fee=500
-    uniV3Pool: '0xC6962004f452bE9203591991D15f6b388e09E8D0' as Address,
+    // WETH/USDC.e 0.05% pool — verified on-chain
+    uniV3Pool: '0xC31E54c7a869B9FcBEcc14363CF510d1c41fa443' as Address,
     balancerVault: '0xBA12222222228d8Ba445958a75a0704d566BF2C8' as Address,
   },
 } as const
