@@ -47,6 +47,7 @@ Arbitrum:
 
 - USDC amounts: 6-decimal units. 1 USDC = 1000000 (1e6)
 - WETH amounts: wei (18 decimals). 1 WETH = 1000000000000000000 (1e18)
+- ethNative: native ETH/ARB balance in wei — this is what pays for gas. Must be > 0 to execute.
 - borrowAmount and minProfit are always in 6-decimal USDC units
 
 ## Skip conditions
@@ -54,7 +55,8 @@ Arbitrum:
 Skip and explain your reasoning if:
 - No spread exists or spread does not clearly exceed gas costs after slippage buffer.
 - simulate_flash_loan_arbitrage returns willSucceed: false.
-- Insufficient USDC wallet balance to cover gas (USDC needed for gas payment, not for the trade itself).
+- ethNative balance is 0 — cannot pay gas (gas is paid in native ETH/ARB, not USDC).
+- ethereum prices are null (ETH RPC unavailable) — still valid to trade on Arbitrum alone.
 - Market prices are stale or inconsistent.
 
 ## Response style

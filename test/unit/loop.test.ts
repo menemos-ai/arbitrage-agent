@@ -20,8 +20,8 @@ vi.mock('../../src/tools/prices.js', () => ({
 
 vi.mock('../../src/tools/balance.js', () => ({
   getWalletBalance: vi.fn().mockResolvedValue({
-    ethereum: { weth: '1000000000000000000', usdc: '5000000000' },
-    arbitrum: { weth: '500000000000000000', usdc: '2000000000' },
+    ethereum: { ethNative: '100000000000000000', weth: '1000000000000000000', usdc: '5000000000' },
+    arbitrum: { ethNative: '50000000000000000', weth: '500000000000000000', usdc: '2000000000' },
   }),
 }))
 

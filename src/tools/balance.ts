@@ -3,15 +3,16 @@ import { ADDRESSES } from '../config/addresses.js'
 import type { Clients } from '../config/chains.js'
 
 export interface BalanceResult {
-  ethereum: { weth: string; usdc: string }
-  arbitrum: { weth: string; usdc: string }
+  ethereum: { ethNative: string; weth: string; usdc: string }
+  arbitrum: { ethNative: string; weth: string; usdc: string }
 }
 
 export async function getWalletBalance(
   address: `0x${string}`,
   clients: Clients,
 ): Promise<BalanceResult> {
-  const [ethWeth, ethUsdc, arbWeth, arbUsdc] = await Promise.all([
+  const [ethNativeEth, ethWeth, ethUsdc, arbNativeEth, arbWeth, arbUsdc] = await Promise.all([
+    clients.ethereum.public.getBalance({ address }),
     clients.ethereum.public.readContract({
       address: ADDRESSES.ethereum.weth,
       abi: erc20Abi,
@@ -24,6 +25,7 @@ export async function getWalletBalance(
       functionName: 'balanceOf',
       args: [address],
     }),
+    clients.arbitrum.public.getBalance({ address }),
     clients.arbitrum.public.readContract({
       address: ADDRESSES.arbitrum.weth,
       abi: erc20Abi,
@@ -39,7 +41,7 @@ export async function getWalletBalance(
   ])
 
   return {
-    ethereum: { weth: ethWeth.toString(), usdc: ethUsdc.toString() },
-    arbitrum: { weth: arbWeth.toString(), usdc: arbUsdc.toString() },
+    ethereum: { ethNative: ethNativeEth.toString(), weth: ethWeth.toString(), usdc: ethUsdc.toString() },
+    arbitrum: { ethNative: arbNativeEth.toString(), weth: arbWeth.toString(), usdc: arbUsdc.toString() },
   }
 }
