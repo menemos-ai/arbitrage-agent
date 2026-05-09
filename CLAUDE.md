@@ -1,6 +1,8 @@
 # Arbitrage Agent
 
-Autonomous AI agent that monitors WETH/USDC price differences across four DEX pools and executes intra-network arbitrage. All trading decisions are made by Gemini — the runtime only enforces safety rails.
+Autonomous AI agent that monitors WETH/USDC price differences across four DEX pools and executes intra-network arbitrage. All trading decisions are made by an AI model — the runtime only enforces safety rails.
+
+Supports **Google Gemini**, **Anthropic Claude**, and **OpenAI** as AI providers. The provider is selected by the `MODEL` env var prefix.
 
 ## Architecture
 
@@ -16,7 +18,13 @@ src/
     gas.ts         estimate_gas — gas cost in USD using live gas price + ETH price
     swap.ts        execute_swap — token approval + simulate + write + receipt
   agent/
-    definitions.ts Gemini Tool definitions (JSON Schema)
+    providers/
+      types.ts     Shared interfaces: AIProvider, ToolDefinition, TurnResult, etc.
+      gemini.ts    Google Gemini adapter
+      claude.ts    Anthropic Claude adapter
+      openai.ts    OpenAI adapter
+      index.ts     createProvider factory — infers provider from model name prefix
+    definitions.ts Provider-agnostic tool definitions (JSON Schema)
     prompt.ts      System prompt
     loop.ts        Agentic loop (multi-turn with tool dispatch)
   mnemos/
@@ -40,7 +48,7 @@ test/
 
    ```bash
    cp .env.example .env
-   # Edit .env with your RPC URLs, private key, and Gemini API key
+   # Edit .env with your RPC URLs, private key, and AI provider API key
    ```
 
    Required env vars:
@@ -49,14 +57,25 @@ test/
    | `ETH_RPC_URL` | Ethereum mainnet RPC endpoint |
    | `ARB_RPC_URL` | Arbitrum One RPC endpoint |
    | `PRIVATE_KEY` | Wallet private key (0x prefixed) |
-   | `GEMINI_API_KEY` | Google Gemini API key |
    | `MAX_TRADE_USDC` | Max USD per swap (enforced by runtime) |
+
+   AI provider — set the key that matches your chosen `MODEL`:
+   | Variable | Required when |
+   |---|---|
+   | `GEMINI_API_KEY` | `MODEL` starts with `gemini-` (default) |
+   | `ANTHROPIC_API_KEY` | `MODEL` starts with `claude-` |
+   | `OPENAI_API_KEY` | `MODEL` starts with `gpt-` or `o1`/`o3`/`o4` |
 
    Optional:
    | Variable | Default | Description |
    |---|---|---|
    | `POLL_INTERVAL_SECONDS` | `30` | Loop interval in seconds (min 10) |
-   | `MODEL` | `gemini-2.0-flash` | Gemini model to use |
+   | `MODEL` | `gemini-2.0-flash` | AI model — prefix determines provider |
+
+   Example model values:
+   - `gemini-2.0-flash` / `gemini-1.5-pro` → Google Gemini
+   - `claude-sonnet-4-6` / `claude-opus-4-7` → Anthropic Claude
+   - `gpt-4o` / `o3` → OpenAI
 
    Mnemos (all 9 must be set to enable on-chain trade memory):
    | Variable | Description |

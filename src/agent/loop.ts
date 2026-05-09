@@ -1,6 +1,6 @@
-import { GoogleGenerativeAI, FinishReason } from '@google/generative-ai'
-import type { FunctionCall, Part } from '@google/generative-ai'
-import { TOOLS } from './definitions.js'
+import { createProvider } from './providers/index.js'
+import type { ToolCallRequest, ToolResult } from './providers/types.js'
+import { TOOL_DEFINITIONS } from './definitions.js'
 import { SYSTEM_PROMPT } from './prompt.js'
 import { getPrices } from '../tools/prices.js'
 import { getWalletBalance } from '../tools/balance.js'
@@ -12,8 +12,6 @@ import type { Clients } from '../config/chains.js'
 import type { Network } from '../config/addresses.js'
 import type { MnemosContext } from '../mnemos/client.js'
 import { buildTradeBundle } from '../mnemos/bundle.js'
-
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!)
 
 const MAX_TURNS = 20
 
@@ -27,7 +25,7 @@ function wrapError(toolName: string, error: unknown): string {
 }
 
 export async function dispatchTool(
-  call: FunctionCall,
+  call: ToolCallRequest,
   clients: Clients,
   walletAddress: `0x${string}`,
   maxTradeUsdc: number,
@@ -90,26 +88,16 @@ export async function runIteration(
 ): Promise<void> {
   console.log('\n--- Iteration start', new Date().toISOString(), '---')
 
-  const geminiModel = genAI.getGenerativeModel({
-    model,
-    tools: TOOLS,
-    systemInstruction: SYSTEM_PROMPT,
-    generationConfig: { maxOutputTokens: 4096 },
-  })
+  const provider = createProvider(model, SYSTEM_PROMPT, TOOL_DEFINITIONS)
 
-  const chat = geminiModel.startChat()
   let swapExecuted = false
-
-  // Mnemos collection state
   const reasoningLog: string[] = []
   let latestPrices: PriceResult | null = null
   let latestGasCostUsd: number | null = null
   let swapContext: { params: SwapParams; result: SwapResult } | null = null
 
-  // Initial trigger — system instruction sets the context, this starts the turn
-  let result = await chat.sendMessage('Begin arbitrage analysis iteration.')
+  let turnResult = await provider.sendMessage('Begin arbitrage analysis iteration.')
 
-  // Agentic loop
   let turnCount = 0
   while (true) {
     if (++turnCount > MAX_TURNS) {
@@ -117,90 +105,68 @@ export async function runIteration(
       break
     }
 
-    const response = result.response
-    const candidate = response.candidates?.[0]
-
-    if (!candidate) break
-
-    // Collect text blocks — capture reasoning before stop-reason checks
-    for (const part of candidate.content?.parts ?? []) {
-      if ('text' in part && part.text?.trim()) {
-        console.log('[Gemini]', part.text)
-        reasoningLog.push(part.text)
+    for (const text of turnResult.textBlocks) {
+      if (text.trim()) {
+        console.log(`[${provider.name}]`, text)
+        reasoningLog.push(text)
       }
     }
 
-    // Any finish reason other than STOP (normal) means the model can't continue
-    if (candidate.finishReason && candidate.finishReason !== FinishReason.STOP) {
-      console.warn(`[WARN] Gemini finished with reason: ${candidate.finishReason} — aborting iteration`)
+    if (turnResult.abortReason) {
+      console.warn(`[WARN] ${provider.name} aborted: ${turnResult.abortReason}`)
       break
     }
 
-    // Get all function calls from this turn
-    const functionCalls = response.functionCalls() ?? []
+    if (turnResult.toolCalls.length === 0) break
 
-    if (functionCalls.length === 0) break
+    const nonSwapCalls = turnResult.toolCalls.filter(c => c.name !== 'execute_swap')
+    const swapCalls = turnResult.toolCalls.filter(c => c.name === 'execute_swap')
 
-    // Separate execute_swap from other tools — run non-swap in parallel, swap sequentially
-    const nonSwapCalls = functionCalls.filter(fc => fc.name !== 'execute_swap')
-    const swapCalls = functionCalls.filter(fc => fc.name === 'execute_swap')
+    const toolResults: ToolResult[] = []
 
-    const responseParts: Part[] = []
-
-    // Run non-swap tools in parallel
     const parallelResults = await Promise.all(
       nonSwapCalls.map(async call => {
         const content = await dispatchTool(call, clients, walletAddress, maxTradeUsdc)
         console.log(`[tool:${call.name}]`, content)
 
-        // Capture prices and gas cost for Mnemos bundle
         const parsed = JSON.parse(content) as { tool: string; data?: unknown; error?: string }
         if (!parsed.error && parsed.data != null) {
-          if (parsed.tool === 'get_prices') {
-            latestPrices = parsed.data as PriceResult
-          } else if (parsed.tool === 'estimate_gas') {
+          if (parsed.tool === 'get_prices') latestPrices = parsed.data as PriceResult
+          else if (parsed.tool === 'estimate_gas')
             latestGasCostUsd = (parsed.data as { gasCostUsd: number }).gasCostUsd
-          }
         }
 
-        return {
-          functionResponse: { name: call.name, response: { result: content } },
-        } as Part
+        return { id: call.id, name: call.name, content } satisfies ToolResult
       }),
     )
-    responseParts.push(...parallelResults)
+    toolResults.push(...parallelResults)
 
-    // Run execute_swap sequentially (at most once per iteration)
     for (const call of swapCalls) {
       if (swapExecuted) {
         const skipped = wrapError(call.name, 'execute_swap already called this iteration — skipped')
         console.warn('[WARN]', skipped)
-        responseParts.push({ functionResponse: { name: call.name, response: { result: skipped } } } as Part)
+        toolResults.push({ id: call.id, name: call.name, content: skipped })
         continue
       }
 
-      // Capture requested swap params before dispatch (intentional — audit trail)
       const capturedParams = call.args as unknown as SwapParams
-
       const content = await dispatchTool(call, clients, walletAddress, maxTradeUsdc)
       console.log(`[tool:${call.name}]`, content)
 
-      // Capture swap result for Mnemos bundle (only on success — guard against wrapError envelopes)
       const parsed = JSON.parse(content) as { tool: string; data?: unknown; error?: string }
       if (!parsed.error && parsed.data != null) {
         swapContext = { params: capturedParams, result: parsed.data as SwapResult }
       }
 
-      responseParts.push({ functionResponse: { name: call.name, response: { result: content } } } as Part)
+      toolResults.push({ id: call.id, name: call.name, content })
       swapExecuted = true
     }
 
-    result = await chat.sendMessage(responseParts)
+    turnResult = await provider.sendToolResults(toolResults)
   }
 
   console.log('--- Iteration end ---')
 
-  // Post-loop Mnemos snapshot — fires after all reasoning is collected
   if (mnemos && swapContext) {
     try {
       const bundle = buildTradeBundle(
@@ -213,7 +179,9 @@ export async function runIteration(
       )
       const snap = await mnemos.client.snapshot(bundle)
       const listTx = await mnemos.client.list(snap.tokenId, mnemos.terms)
-      console.log(`[mnemos] Snapshot minted — tokenId: ${snap.tokenId}, tx: ${snap.txHash}, storage: ${snap.storageUri}`)
+      console.log(
+        `[mnemos] Snapshot minted — tokenId: ${snap.tokenId}, tx: ${snap.txHash}, storage: ${snap.storageUri}`,
+      )
       console.log(`[mnemos] Listed — tokenId: ${snap.tokenId}, tx: ${listTx}`)
       mnemos.stats.totalTrades++
       mnemos.stats.totalGasCostUsd += latestGasCostUsd ?? 0

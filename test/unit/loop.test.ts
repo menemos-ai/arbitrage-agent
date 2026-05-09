@@ -1,28 +1,14 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import type { FunctionCall } from '@google/generative-ai'
+import type { ToolCallRequest } from '../../src/agent/providers/types.js'
 
-// --- Mocks (must be defined before dynamic imports) ---
+// --- Mocks ---
 
-vi.mock('@google/generative-ai', () => {
+vi.mock('../../src/agent/providers/index.js', () => {
   const sendMessage = vi.fn()
-  const startChat = vi.fn(() => ({ sendMessage }))
-  const getGenerativeModel = vi.fn(() => ({ startChat }))
-  const SchemaType = {
-    STRING: 'string',
-    NUMBER: 'number',
-    INTEGER: 'integer',
-    BOOLEAN: 'boolean',
-    ARRAY: 'array',
-    OBJECT: 'object',
+  const sendToolResults = vi.fn()
+  return {
+    createProvider: vi.fn(() => ({ name: 'TestProvider', sendMessage, sendToolResults })),
   }
-  const FinishReason = {
-    STOP: 'STOP',
-    MAX_TOKENS: 'MAX_TOKENS',
-    SAFETY: 'SAFETY',
-    RECITATION: 'RECITATION',
-    OTHER: 'OTHER',
-  }
-  return { GoogleGenerativeAI: vi.fn(() => ({ getGenerativeModel })), SchemaType, FinishReason }
 })
 
 vi.mock('../../src/tools/prices.js', () => ({
@@ -56,44 +42,34 @@ vi.mock('../../src/tools/swap.js', () => ({
 
 // --- Helpers ---
 
-function makeEndTurn(text = ''): any {
-  const parts = text ? [{ text }] : []
+type TurnResult = { textBlocks: string[]; toolCalls: ToolCallRequest[]; abortReason?: string }
+
+function makeEndTurn(text = ''): TurnResult {
+  return { textBlocks: text ? [text] : [], toolCalls: [] }
+}
+
+function makeToolCall(
+  tools: Array<{ name: string; args: Record<string, unknown> }>,
+  text = '',
+): TurnResult {
   return {
-    response: {
-      candidates: [{ content: { role: 'model', parts }, finishReason: 'STOP' }],
-      functionCalls: () => undefined,
-    },
+    textBlocks: text ? [text] : [],
+    toolCalls: tools.map((t, i) => ({ id: `call_${i}`, name: t.name, args: t.args })),
   }
 }
 
-function makeToolCall(tools: Array<{ name: string; args: Record<string, unknown> }>, text = ''): any {
-  const parts = [
-    ...(text ? [{ text }] : []),
-    ...tools.map(t => ({ functionCall: t })),
-  ]
-  return {
-    response: {
-      candidates: [{ content: { role: 'model', parts }, finishReason: 'STOP' }],
-      functionCalls: () => tools,
-    },
-  }
+function makeAbort(reason: string): TurnResult {
+  return { textBlocks: [], toolCalls: [], abortReason: reason }
 }
 
-function makeMaxTokens(): any {
-  return {
-    response: {
-      candidates: [{ content: { role: 'model', parts: [] }, finishReason: 'MAX_TOKENS' }],
-      functionCalls: () => undefined,
-    },
+async function getMocks() {
+  const mod = await import('../../src/agent/providers/index.js')
+  // Call createProvider to get the shared mock fns from the vi.mock closure
+  const provider = (mod.createProvider as ReturnType<typeof vi.fn>)('mock', '', []) as {
+    sendMessage: ReturnType<typeof vi.fn>
+    sendToolResults: ReturnType<typeof vi.fn>
   }
-}
-
-async function getMockSendMessage() {
-  const { GoogleGenerativeAI } = await import('@google/generative-ai')
-  const ai = new (GoogleGenerativeAI as any)('')
-  const model = ai.getGenerativeModel({})
-  const chat = model.startChat()
-  return vi.mocked(chat.sendMessage)
+  return { sendMessage: provider.sendMessage, sendToolResults: provider.sendToolResults }
 }
 
 // --- Tests ---
@@ -103,7 +79,7 @@ describe('dispatchTool', () => {
 
   it('dispatches get_prices and returns wrapped result', async () => {
     const { dispatchTool } = await import('../../src/agent/loop.js')
-    const call: FunctionCall = { name: 'get_prices', args: {} }
+    const call: ToolCallRequest = { id: 'call_0', name: 'get_prices', args: {} }
     const result = await dispatchTool(call, {} as never, '0x0' as `0x${string}`, 100)
     const parsed = JSON.parse(result)
     expect(parsed.tool).toBe('get_prices')
@@ -112,7 +88,7 @@ describe('dispatchTool', () => {
 
   it('dispatches get_wallet_balance and returns wrapped result', async () => {
     const { dispatchTool } = await import('../../src/agent/loop.js')
-    const call: FunctionCall = { name: 'get_wallet_balance', args: {} }
+    const call: ToolCallRequest = { id: 'call_0', name: 'get_wallet_balance', args: {} }
     const result = await dispatchTool(call, {} as never, '0xwallet' as `0x${string}`, 100)
     const parsed = JSON.parse(result)
     expect(parsed.tool).toBe('get_wallet_balance')
@@ -121,7 +97,7 @@ describe('dispatchTool', () => {
 
   it('dispatches estimate_gas with correct args', async () => {
     const { dispatchTool } = await import('../../src/agent/loop.js')
-    const call: FunctionCall = { name: 'estimate_gas', args: { network: 'ethereum', dex: 'v2' } }
+    const call: ToolCallRequest = { id: 'call_0', name: 'estimate_gas', args: { network: 'ethereum', dex: 'v2' } }
     const result = await dispatchTool(call, {} as never, '0x0' as `0x${string}`, 100)
     const parsed = JSON.parse(result)
     expect(parsed.tool).toBe('estimate_gas')
@@ -130,7 +106,8 @@ describe('dispatchTool', () => {
 
   it('dispatches execute_swap and returns wrapped result', async () => {
     const { dispatchTool } = await import('../../src/agent/loop.js')
-    const call: FunctionCall = {
+    const call: ToolCallRequest = {
+      id: 'call_0',
       name: 'execute_swap',
       args: {
         network: 'ethereum',
@@ -149,7 +126,7 @@ describe('dispatchTool', () => {
 
   it('wraps errors in JSON error envelope', async () => {
     const { dispatchTool } = await import('../../src/agent/loop.js')
-    const call: FunctionCall = { name: 'unknown_tool', args: {} }
+    const call: ToolCallRequest = { id: 'call_0', name: 'unknown_tool', args: {} }
     const result = await dispatchTool(call, {} as never, '0x0' as `0x${string}`, 100)
     const parsed = JSON.parse(result)
     expect(parsed.error).toMatch(/Unknown tool/)
@@ -160,18 +137,18 @@ describe('runIteration', () => {
   beforeEach(() => vi.clearAllMocks())
 
   it('completes a full iteration with end_turn', async () => {
-    const mockSendMessage = await getMockSendMessage()
-    mockSendMessage.mockResolvedValue(makeEndTurn('No arbitrage opportunity this iteration.'))
+    const { sendMessage } = await getMocks()
+    sendMessage.mockResolvedValue(makeEndTurn('No arbitrage opportunity this iteration.'))
 
     const { runIteration } = await import('../../src/agent/loop.js')
     await expect(runIteration({} as never, '0xwallet' as `0x${string}`, 100, 'gemini-2.0-flash')).resolves.toBeUndefined()
-    expect(mockSendMessage).toHaveBeenCalledOnce()
+    expect(sendMessage).toHaveBeenCalledOnce()
   })
 
-  it('aborts and warns on max_tokens stop reason', async () => {
-    const mockSendMessage = await getMockSendMessage()
+  it('aborts and warns on provider abort reason', async () => {
+    const { sendMessage } = await getMocks()
     const consoleSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
-    mockSendMessage.mockResolvedValue(makeMaxTokens())
+    sendMessage.mockResolvedValue(makeAbort('MAX_TOKENS'))
 
     const { runIteration } = await import('../../src/agent/loop.js')
     await runIteration({} as never, '0xwallet' as `0x${string}`, 100, 'gemini-2.0-flash')
@@ -180,12 +157,12 @@ describe('runIteration', () => {
   })
 
   it('dispatches non-swap tools then execute_swap sequentially', async () => {
-    const mockSendMessage = await getMockSendMessage()
+    const { sendMessage, sendToolResults } = await getMocks()
     const { getPrices } = await import('../../src/tools/prices.js')
     const { executeSwap } = await import('../../src/tools/swap.js')
 
-    mockSendMessage
-      .mockResolvedValueOnce(makeToolCall([
+    sendMessage.mockResolvedValueOnce(
+      makeToolCall([
         { name: 'get_prices', args: {} },
         {
           name: 'execute_swap',
@@ -196,19 +173,21 @@ describe('runIteration', () => {
             amount_in: '1000000000000000000', min_amount_out: '2900000000',
           },
         },
-      ]))
-      .mockResolvedValueOnce(makeEndTurn('Swap executed.'))
+      ]),
+    )
+    sendToolResults.mockResolvedValueOnce(makeEndTurn('Swap executed.'))
 
     const { runIteration } = await import('../../src/agent/loop.js')
     await runIteration({} as never, '0xwallet' as `0x${string}`, 100, 'gemini-2.0-flash')
 
     expect(getPrices).toHaveBeenCalledOnce()
     expect(executeSwap).toHaveBeenCalledOnce()
-    expect(mockSendMessage).toHaveBeenCalledTimes(2)
+    expect(sendMessage).toHaveBeenCalledOnce()
+    expect(sendToolResults).toHaveBeenCalledOnce()
   })
 
   it('skips second execute_swap in the same iteration', async () => {
-    const mockSendMessage = await getMockSendMessage()
+    const { sendMessage, sendToolResults } = await getMocks()
     const { executeSwap } = await import('../../src/tools/swap.js')
     const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
 
@@ -219,12 +198,13 @@ describe('runIteration', () => {
       amount_in: '1000000000000000000', min_amount_out: '2900000000',
     }
 
-    mockSendMessage
-      .mockResolvedValueOnce(makeToolCall([
+    sendMessage.mockResolvedValueOnce(
+      makeToolCall([
         { name: 'execute_swap', args: swapArgs },
         { name: 'execute_swap', args: swapArgs },
-      ]))
-      .mockResolvedValueOnce(makeEndTurn())
+      ]),
+    )
+    sendToolResults.mockResolvedValueOnce(makeEndTurn())
 
     const { runIteration } = await import('../../src/agent/loop.js')
     await runIteration({} as never, '0xwallet' as `0x${string}`, 100, 'gemini-2.0-flash')
@@ -243,14 +223,19 @@ describe('runIteration — mnemos', () => {
     amount_in: '1000000000000000000', min_amount_out: '2900000000',
   }
 
-  let mockSendMessage: ReturnType<typeof vi.fn>
+  let sendMessage: ReturnType<typeof vi.fn>
+  let sendToolResults: ReturnType<typeof vi.fn>
   let mockSnapshot: ReturnType<typeof vi.fn>
   let mockList: ReturnType<typeof vi.fn>
-  let mnemos: { client: { snapshot: ReturnType<typeof vi.fn>; list: ReturnType<typeof vi.fn> }; terms: object; stats: { totalTrades: number; totalGasCostUsd: number } }
+  let mnemos: {
+    client: { snapshot: ReturnType<typeof vi.fn>; list: ReturnType<typeof vi.fn> }
+    terms: object
+    stats: { totalTrades: number; totalGasCostUsd: number }
+  }
 
   beforeEach(async () => {
     vi.clearAllMocks()
-    mockSendMessage = await getMockSendMessage()
+    ;({ sendMessage, sendToolResults } = await getMocks())
     mockSnapshot = vi.fn().mockResolvedValue({ tokenId: '42', txHash: '0xsnaptx', storageUri: 'mock://uri' })
     mockList = vi.fn().mockResolvedValue('0xlisttx')
     mnemos = {
@@ -261,28 +246,28 @@ describe('runIteration — mnemos', () => {
   })
 
   it('no mnemos provided → snapshot never called', async () => {
-    mockSendMessage.mockResolvedValue(makeEndTurn('No opportunity'))
+    sendMessage.mockResolvedValue(makeEndTurn('No opportunity'))
     const { runIteration } = await import('../../src/agent/loop.js')
     await runIteration({} as never, '0xwallet' as `0x${string}`, 100, 'gemini-2.0-flash')
     expect(mockSnapshot).not.toHaveBeenCalled()
   })
 
   it('mnemos provided but no swap → snapshot not called', async () => {
-    mockSendMessage
-      .mockResolvedValueOnce(makeToolCall([{ name: 'get_prices', args: {} }]))
-      .mockResolvedValueOnce(makeEndTurn('No opportunity'))
+    sendMessage.mockResolvedValueOnce(makeToolCall([{ name: 'get_prices', args: {} }]))
+    sendToolResults.mockResolvedValueOnce(makeEndTurn('No opportunity'))
     const { runIteration } = await import('../../src/agent/loop.js')
     await runIteration({} as never, '0xwallet' as `0x${string}`, 100, 'gemini-2.0-flash', mnemos as any)
     expect(mockSnapshot).not.toHaveBeenCalled()
   })
 
   it('swap succeeds → snapshot called once with correct pricesAtTrade', async () => {
-    mockSendMessage
-      .mockResolvedValueOnce(makeToolCall([
+    sendMessage.mockResolvedValueOnce(
+      makeToolCall([
         { name: 'get_prices', args: {} },
         { name: 'execute_swap', args: SWAP_ARGS },
-      ]))
-      .mockResolvedValueOnce(makeEndTurn('Swap done'))
+      ]),
+    )
+    sendToolResults.mockResolvedValueOnce(makeEndTurn('Swap done'))
 
     const { runIteration } = await import('../../src/agent/loop.js')
     await runIteration({} as never, '0xwallet' as `0x${string}`, 100, 'gemini-2.0-flash', mnemos as any)
@@ -299,12 +284,13 @@ describe('runIteration — mnemos', () => {
   it('snapshot error → no crash, error logged, stats unchanged', async () => {
     mockSnapshot.mockRejectedValue(new Error('snapshot failed'))
     const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
-    mockSendMessage
-      .mockResolvedValueOnce(makeToolCall([{ name: 'execute_swap', args: SWAP_ARGS }]))
-      .mockResolvedValueOnce(makeEndTurn())
+    sendMessage.mockResolvedValueOnce(makeToolCall([{ name: 'execute_swap', args: SWAP_ARGS }]))
+    sendToolResults.mockResolvedValueOnce(makeEndTurn())
 
     const { runIteration } = await import('../../src/agent/loop.js')
-    await expect(runIteration({} as never, '0xwallet' as `0x${string}`, 100, 'gemini-2.0-flash', mnemos as any)).resolves.toBeUndefined()
+    await expect(
+      runIteration({} as never, '0xwallet' as `0x${string}`, 100, 'gemini-2.0-flash', mnemos as any),
+    ).resolves.toBeUndefined()
 
     expect(errorSpy).toHaveBeenCalledWith('[mnemos] Error:', 'snapshot failed')
     expect(mnemos.stats.totalTrades).toBe(0)
@@ -315,12 +301,13 @@ describe('runIteration — mnemos', () => {
   it('list error → no crash, stats unchanged', async () => {
     mockList.mockRejectedValue(new Error('list failed'))
     const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
-    mockSendMessage
-      .mockResolvedValueOnce(makeToolCall([{ name: 'execute_swap', args: SWAP_ARGS }]))
-      .mockResolvedValueOnce(makeEndTurn())
+    sendMessage.mockResolvedValueOnce(makeToolCall([{ name: 'execute_swap', args: SWAP_ARGS }]))
+    sendToolResults.mockResolvedValueOnce(makeEndTurn())
 
     const { runIteration } = await import('../../src/agent/loop.js')
-    await expect(runIteration({} as never, '0xwallet' as `0x${string}`, 100, 'gemini-2.0-flash', mnemos as any)).resolves.toBeUndefined()
+    await expect(
+      runIteration({} as never, '0xwallet' as `0x${string}`, 100, 'gemini-2.0-flash', mnemos as any),
+    ).resolves.toBeUndefined()
 
     expect(errorSpy).toHaveBeenCalledWith('[mnemos] Error:', 'list failed')
     expect(mnemos.stats.totalTrades).toBe(0)
@@ -328,12 +315,13 @@ describe('runIteration — mnemos', () => {
   })
 
   it('stats incremented after full success', async () => {
-    mockSendMessage
-      .mockResolvedValueOnce(makeToolCall([
+    sendMessage.mockResolvedValueOnce(
+      makeToolCall([
         { name: 'estimate_gas', args: { network: 'ethereum', dex: 'v3' } },
         { name: 'execute_swap', args: SWAP_ARGS },
-      ]))
-      .mockResolvedValueOnce(makeEndTurn())
+      ]),
+    )
+    sendToolResults.mockResolvedValueOnce(makeEndTurn())
 
     const { runIteration } = await import('../../src/agent/loop.js')
     await runIteration({} as never, '0xwallet' as `0x${string}`, 100, 'gemini-2.0-flash', mnemos as any)
@@ -343,12 +331,10 @@ describe('runIteration — mnemos', () => {
   })
 
   it('reasoning joined from multiple turns', async () => {
-    mockSendMessage
-      .mockResolvedValueOnce(makeToolCall(
-        [{ name: 'execute_swap', args: SWAP_ARGS }],
-        'Analyzing spread...',
-      ))
-      .mockResolvedValueOnce(makeEndTurn('Swap executed successfully'))
+    sendMessage.mockResolvedValueOnce(
+      makeToolCall([{ name: 'execute_swap', args: SWAP_ARGS }], 'Analyzing spread...'),
+    )
+    sendToolResults.mockResolvedValueOnce(makeEndTurn('Swap executed successfully'))
 
     const { runIteration } = await import('../../src/agent/loop.js')
     await runIteration({} as never, '0xwallet' as `0x${string}`, 100, 'gemini-2.0-flash', mnemos as any)
@@ -358,9 +344,8 @@ describe('runIteration — mnemos', () => {
   })
 
   it('gasCostUsd is null in bundle when estimate_gas not called', async () => {
-    mockSendMessage
-      .mockResolvedValueOnce(makeToolCall([{ name: 'execute_swap', args: SWAP_ARGS }]))
-      .mockResolvedValueOnce(makeEndTurn())
+    sendMessage.mockResolvedValueOnce(makeToolCall([{ name: 'execute_swap', args: SWAP_ARGS }]))
+    sendToolResults.mockResolvedValueOnce(makeEndTurn())
 
     const { runIteration } = await import('../../src/agent/loop.js')
     await runIteration({} as never, '0xwallet' as `0x${string}`, 100, 'gemini-2.0-flash', mnemos as any)

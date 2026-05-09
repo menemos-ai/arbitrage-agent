@@ -1,6 +1,11 @@
-import { MnemosClient } from '@mnemos-sdk/sdk'
-import type { ListingTerms } from '@mnemos-sdk/sdk'
+import { createRequire } from 'module'
+import type { MnemosClient, ListingTerms } from '@mnemos-sdk/sdk'
 import type { CumulativeStats } from './bundle.js'
+
+// Force CJS build of @mnemos-sdk/sdk to avoid "Dynamic require of crypto" error
+// caused by tweetnacl bundled inside the ESM build.
+const _require = createRequire(import.meta.url)
+const { MnemosClient: MnemosClientImpl } = _require('@mnemos-sdk/sdk') as typeof import('@mnemos-sdk/sdk')
 
 export interface MnemosEnv {
   privateKey: `0x${string}`
@@ -23,7 +28,7 @@ export interface MnemosContext {
 }
 
 export function createMnemosClient(env: MnemosEnv): MnemosClient {
-  return new MnemosClient({
+  return new MnemosClientImpl({
     privateKey: env.privateKey,
     chainId: Number(env.ogChainId),
     rpcUrl: env.ogRpcUrl,

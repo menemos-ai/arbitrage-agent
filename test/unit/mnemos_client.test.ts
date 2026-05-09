@@ -8,8 +8,14 @@ const MockMnemosClient = vi.hoisted(() =>
   }
 )
 
-vi.mock('@mnemos-sdk/sdk', () => ({
-  MnemosClient: MockMnemosClient,
+// client.ts loads @mnemos-sdk/sdk via createRequire (CJS) to avoid
+// the "Dynamic require of crypto" error from the ESM bundle.
+// We intercept createRequire here so the test still receives MockMnemosClient.
+vi.mock('module', () => ({
+  createRequire: () => (id: string) => {
+    if (id === '@mnemos-sdk/sdk') return { MnemosClient: MockMnemosClient }
+    throw new Error(`Unexpected createRequire("${id}")`)
+  },
 }))
 
 const validEnv: MnemosEnv = {
