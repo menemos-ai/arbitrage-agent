@@ -7,6 +7,10 @@
     "start": "tsx src/index.ts",
     "build": "tsc",
     "build:contracts": "cd contracts && forge build",
+    "deploy:dry-run:eth": "cd contracts && forge script script/Deploy.s.sol --rpc-url $ETH_RPC_URL",
+    "deploy:dry-run:arb": "cd contracts && forge script script/Deploy.s.sol --rpc-url $ARB_RPC_URL",
+    "deploy:eth": "cd contracts && forge script script/Deploy.s.sol --rpc-url $ETH_RPC_URL --private-key $PRIVATE_KEY --broadcast",
+    "deploy:arb": "cd contracts && forge script script/Deploy.s.sol --rpc-url $ARB_RPC_URL --private-key $PRIVATE_KEY --broadcast",
     "test:unit": "vitest run --project unit",
     "test:integration": "vitest run --project integration",
     "test": "vitest run"
