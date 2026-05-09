@@ -1,0 +1,12 @@
+node_modules
+dist
+.env
+*.env
+contracts/out
+contracts/cache
+contracts/lib
+test
+docs
+*.md
+.git
+.gitignore
