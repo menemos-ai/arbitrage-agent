@@ -1,8 +1,7 @@
 import 'dotenv/config'
 import { createClients } from './config/chains.js'
 import { runIteration } from './agent/loop.js'
-import { createMnemosClient, buildListingTerms, type MnemosContext } from './mnemos/client.js'
-import type { MnemosEnv } from './mnemos/client.js'
+import type { MnemosContext, MnemosEnv } from './mnemos/client.js'
 
 function requireEnv(name: string): string {
   const value = process.env[name]
@@ -37,6 +36,7 @@ const MNEMOS_REQUIRED = [
 
 let mnemos: MnemosContext | undefined
 if (MNEMOS_REQUIRED.every(k => process.env[k])) {
+  const { createMnemosClient, buildListingTerms } = await import('./mnemos/client.js')
   const mnemosEnv: MnemosEnv = {
     privateKey: PRIVATE_KEY,
     ogRpcUrl: process.env.OG_RPC_URL!,
