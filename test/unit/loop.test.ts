@@ -20,7 +20,7 @@ vi.mock('../../src/tools/prices.js', () => ({
 
 vi.mock('../../src/tools/balance.js', () => ({
   getWalletBalance: vi.fn().mockResolvedValue({
-    ethereum: { ethNative: '100000000000000000', weth: '1000000000000000000', usdc: '5000000000' },
+    ethereum: null,
     arbitrum: { ethNative: '50000000000000000', weth: '500000000000000000', usdc: '2000000000' },
   }),
 }))
@@ -95,7 +95,7 @@ describe('dispatchTool', () => {
     const result = await dispatchTool(call, {} as never, '0xwallet' as `0x${string}`, 100)
     const parsed = JSON.parse(result)
     expect(parsed.tool).toBe('get_wallet_balance')
-    expect(parsed.data.ethereum.weth).toBe('1000000000000000000')
+    expect(parsed.data.arbitrum.weth).toBe('500000000000000000')
   })
 
   it('dispatches estimate_gas with correct args', async () => {

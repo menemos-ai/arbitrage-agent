@@ -60,8 +60,11 @@ if (isNaN(POLL_INTERVAL_SECONDS) || POLL_INTERVAL_SECONDS < 10) {
 
 const clients = createClients({ ethRpcUrl: ETH_RPC_URL, arbRpcUrl: ARB_RPC_URL, privateKey: PRIVATE_KEY })
 const walletAddress = clients.ethereum.wallet.account!.address
-const executorAddresses = EXECUTOR_ETH && EXECUTOR_ARB
-  ? { ethereum: EXECUTOR_ETH, arbitrum: EXECUTOR_ARB }
+const executorAddresses = (EXECUTOR_ETH || EXECUTOR_ARB)
+  ? {
+      ...(EXECUTOR_ETH ? { ethereum: EXECUTOR_ETH } : {}),
+      ...(EXECUTOR_ARB ? { arbitrum: EXECUTOR_ARB } : {}),
+    }
   : undefined
 
 // Build optional Mnemos context — all 9 vars must be present to enable
