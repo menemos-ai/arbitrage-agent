@@ -90,7 +90,7 @@ test/
    |---|---|
    | `OG_RPC_URL` | 0G Network RPC endpoint |
    | `OG_STORAGE_NODE` | 0G Storage node URL |
-   | `OG_CHAIN_ID` | 0G chain ID (16601 for testnet) |
+   | `OG_CHAIN_ID` | 0G chain ID (16661 for mainnet) |
    | `MNEMO_REGISTRY_ADDRESS` | Deployed Mnemos registry contract |
    | `MNEMO_MARKETPLACE_ADDRESS` | Deployed Mnemos marketplace contract |
    | `MNEMO_BUY_PRICE` | Buy price in wei |

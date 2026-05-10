@@ -1,6 +1,6 @@
 # Arbitrage Agent
 
-Autonomous AI trading agent demo — built for hackathon purposes. Claude AI makes all trading decisions using on-chain data from Uniswap V2/V3 (ETH Mainnet) and SushiSwap V2/Uniswap V3 (Arbitrum).
+Autonomous AI trading agent that makes all trading decisions using on-chain data from Uniswap V2/V3 (ETH Mainnet) and SushiSwap V2/Uniswap V3 (Arbitrum). Supports Claude, Gemini, and OpenAI as AI providers.
 
 ---
 
@@ -8,7 +8,7 @@ Autonomous AI trading agent demo — built for hackathon purposes. Claude AI mak
 
 **THIS PROJECT IS NOT INTENDED FOR LIVE/PRODUCTION ARBITRAGE.**
 
-- This bot was built as a **hackathon demo** to prove that an autonomous AI agent can reason about on-chain data and execute transactions. It is **not production-ready**.
+- This bot is a **proof-of-concept** demonstrating that an autonomous AI agent can reason about on-chain data and execute transactions. It is **not production-ready**.
 - **DO YOUR OWN RESEARCH (DYOR)** before using any part of this codebase with real funds. The author(s) take no responsibility for any financial loss resulting from use of this software.
 - There is **no MEV protection**. Your transactions can be frontrun or sandwiched.
 - There is **no circuit breaker**. If an RPC goes down or a pool drains, the bot may behave unexpectedly.
