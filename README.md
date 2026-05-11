@@ -1,6 +1,8 @@
-# Arbitrage Agent
+# Arbitrage Agent — Mnemos Integration Demo
 
 Autonomous AI trading agent that makes all trading decisions using on-chain data from Uniswap V2/V3 (ETH Mainnet) and SushiSwap V2/Uniswap V3 (Arbitrum). Supports Claude, Gemini, and OpenAI as AI providers.
+
+This agent is also the **reference Mnemos integration** for the 0G APAC Hackathon — after each successful swap it snapshots its full trading memory to 0G Storage, mints a provenance NFT on 0G Chain, and automatically lists it on the Mnemos marketplace. For project overview and architecture, see the [root README](../README.md).
 
 ---
 
@@ -62,6 +64,21 @@ Claude calls these tools in sequence, reasons about spreads vs gas costs, and de
 - **Exact-amount approval** — approves only the swap amount, not unlimited
 - **Sequential swap dispatch** — at most one `execute_swap` per iteration
 - **Simulate-before-write** — `simulateContract` catches reverts before spending gas
+
+---
+
+## Mnemos & 0G Integration
+
+This agent integrates the [`@mnemos-sdk/sdk`](../backend) to turn every confirmed swap into a permanent on-chain memory asset. After a trade lands:
+
+1. **Build a memory bundle** — trade details (network, DEX, amounts, tx hash, gas cost), pool prices at execution time, the AI model's full reasoning text, and cumulative session stats are bundled into structured JSON.
+2. **Upload to 0G Storage** — the bundle is encrypted and uploaded via `@0gfoundation/0g-ts-sdk`. The content hash (`keccak256` of the plaintext) is derived and stored as the encryption key seed.
+3. **Mint on 0G Chain** — `MemoryRegistry.mintMemory(contentHash, storageUri)` creates a provenance NFT on 0G Chain (chain ID `16661`).
+4. **List on the marketplace** — `MemoryMarketplace.list()` immediately makes the snapshot available for other agents to buy, rent, or fork with royalty terms you configure.
+
+If either `snapshot` or `list` fails, the error is logged and the agent continues trading — memory snapshots never block trading.
+
+Enable Mnemos by setting the `OG_*` and `MNEMO_*` env vars below. If any are missing, Mnemos starts disabled (startup log shows `Mnemos: disabled`).
 
 ---
 
